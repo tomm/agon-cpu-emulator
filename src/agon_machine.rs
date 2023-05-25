@@ -439,6 +439,54 @@ impl AgonMachine {
         Environment::new(&mut cpu.state, self).subroutine_return();
     }
 
+    fn hostfs_mos_f_mkdir(&mut self, cpu: &mut Cpu) {
+        let dir_name = unsafe {
+            String::from_utf8_unchecked(z80_mem_tools::get_cstring(self, self._peek24(cpu.state.sp() + 3)))
+        };
+        //eprintln!("f_mkdir(\"{}\")", dir_name);
+
+        match std::fs::create_dir(self.hostfs_path().join(dir_name)) {
+            Ok(_) => {
+                // success
+                cpu.state.reg.set24(Reg16::HL, 0);
+            }
+            Err(_) => {
+                // error
+                cpu.state.reg.set24(Reg16::HL, 1);
+            }
+        }
+        Environment::new(&mut cpu.state, self).subroutine_return();
+    }
+
+    fn hostfs_mos_f_rename(&mut self, cpu: &mut Cpu) {
+        let old_name = unsafe {
+            String::from_utf8_unchecked(z80_mem_tools::get_cstring(self, self._peek24(cpu.state.sp() + 3)))
+        };
+        let new_name = unsafe {
+            String::from_utf8_unchecked(z80_mem_tools::get_cstring(self, self._peek24(cpu.state.sp() + 6)))
+        };
+        //eprintln!("f_rename(\"{}\", \"{}\")", old_name, new_name);
+
+        match std::fs::rename(self.hostfs_path().join(&old_name),
+                              self.hostfs_path().join(&new_name)) {
+            Ok(_) => {
+                // success
+                cpu.state.reg.set24(Reg16::HL, 0);
+            }
+            Err(e) => {
+                match e.kind() {
+                    std::io::ErrorKind::NotFound => {
+                        cpu.state.reg.set24(Reg16::HL, 4);
+                    }
+                    _ => {
+                        cpu.state.reg.set24(Reg16::HL, 1);
+                    }
+                }
+            }
+        }
+        Environment::new(&mut cpu.state, self).subroutine_return();
+    }
+
     fn hostfs_mos_f_chdir(&mut self, cpu: &mut Cpu) {
         let cd_to_ptr = self._peek24(cpu.state.sp() + 3);
         let cd_to = unsafe {
@@ -645,14 +693,14 @@ impl AgonMachine {
                 if cpu.state.pc() == MOS_103_MAP.f_getfree { eprintln!("Un-trapped fatfs call: f_getfree"); }
                 if cpu.state.pc() == MOS_103_MAP.f_getlabel { self.hostfs_mos_f_getlabel(&mut cpu); }
                 if cpu.state.pc() == MOS_103_MAP.f_lseek { eprintln!("Un-trapped fatfs call: f_lseek"); }
-                if cpu.state.pc() == MOS_103_MAP.f_mkdir { eprintln!("Un-trapped fatfs call: f_mkdir"); }
+                if cpu.state.pc() == MOS_103_MAP.f_mkdir { self.hostfs_mos_f_mkdir(&mut cpu); }
                 if cpu.state.pc() == MOS_103_MAP.f_mount { self.hostfs_mos_f_mount(&mut cpu); }
                 if cpu.state.pc() == MOS_103_MAP.f_opendir { self.hostfs_mos_f_opendir(&mut cpu); }
                 if cpu.state.pc() == MOS_103_MAP.f_printf { eprintln!("Un-trapped fatfs call: f_printf"); }
                 if cpu.state.pc() == MOS_103_MAP.f_putc { self.hostfs_mos_f_putc(&mut cpu); }
                 if cpu.state.pc() == MOS_103_MAP.f_puts { eprintln!("Un-trapped fatfs call: f_puts"); }
                 if cpu.state.pc() == MOS_103_MAP.f_readdir { self.hostfs_mos_f_readdir(&mut cpu); }
-                if cpu.state.pc() == MOS_103_MAP.f_rename { eprintln!("Un-trapped fatfs call: f_rename"); }
+                if cpu.state.pc() == MOS_103_MAP.f_rename { self.hostfs_mos_f_rename(&mut cpu); }
                 if cpu.state.pc() == MOS_103_MAP.f_setlabel { eprintln!("Un-trapped fatfs call: f_setlabel"); }
                 if cpu.state.pc() == MOS_103_MAP.f_stat { eprintln!("Un-trapped fatfs call: f_stat"); }
                 if cpu.state.pc() == MOS_103_MAP.f_sync { eprintln!("Un-trapped fatfs call: f_sync"); }
