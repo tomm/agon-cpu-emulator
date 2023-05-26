@@ -151,6 +151,7 @@ fn main() {
 
     let _cpu_thread = std::thread::spawn(move || {
         let mut machine = AgonMachine::new(tx_ez80_to_vdp, rx_vdp_to_ez80, vsync_counter_ez80);
+        machine.set_sdcard_directory(std::env::current_dir().unwrap().join("sdcard"));
         machine.start();
     });
 

@@ -30,11 +30,11 @@ mod mos {
 
 struct MosMap {
     pub f_chdir: u32,
-    pub f_chdrive: u32,
+    pub _f_chdrive: u32,
     pub f_close: u32,
     pub f_closedir: u32,
-    pub f_getcwd: u32,
-    pub f_getfree: u32,
+    pub _f_getcwd: u32,
+    pub _f_getfree: u32,
     pub f_getlabel: u32,
     pub f_gets: u32,
     pub f_lseek: u32,
@@ -42,27 +42,27 @@ struct MosMap {
     pub f_mount: u32,
     pub f_open: u32,
     pub f_opendir: u32,
-    pub f_printf: u32,
+    pub _f_printf: u32,
     pub f_putc: u32,
-    pub f_puts: u32,
+    pub _f_puts: u32,
     pub f_read: u32,
     pub f_readdir: u32,
     pub f_rename: u32,
-    pub f_setlabel: u32,
+    pub _f_setlabel: u32,
     pub f_stat: u32,
-    pub f_sync: u32,
-    pub f_truncate: u32,
+    pub _f_sync: u32,
+    pub _f_truncate: u32,
     pub f_unlink: u32,
     pub f_write: u32,
 }
 
 static MOS_103_MAP: MosMap = MosMap {
     f_chdir    : 0x82B2,
-    f_chdrive  : 0x827A,
+    _f_chdrive : 0x827A,
     f_close    : 0x822B,
     f_closedir : 0x8B5B,
-    f_getcwd   : 0x8371,
-    f_getfree  : 0x8CE8,
+    _f_getcwd  : 0x8371,
+    _f_getfree : 0x8CE8,
     f_getlabel : 0x9816,
     f_gets     : 0x9C91,
     f_lseek    : 0x8610,
@@ -70,16 +70,16 @@ static MOS_103_MAP: MosMap = MosMap {
     f_mount    : 0x72F7,
     f_open     : 0x738C,
     f_opendir  : 0x8A52,
-    f_printf   : 0x9F11,
+    _f_printf  : 0x9F11,
     f_putc     : 0x9E8E,
-    f_puts     : 0x9EC4,
+    _f_puts    : 0x9EC4,
     f_read     : 0x785E,
     f_readdir  : 0x8B92,
     f_rename   : 0x9561,
-    f_setlabel : 0x99DB,
+    _f_setlabel: 0x99DB,
     f_stat     : 0x8C55,
-    f_sync     : 0x8115,
-    f_truncate : 0x8F78,
+    _f_sync    : 0x8115,
+    _f_truncate: 0x8F78,
     f_unlink   : 0x911A,
     f_write    : 0x7C10,
 };
@@ -93,9 +93,13 @@ pub struct AgonMachine {
     open_files: HashMap<u32, std::fs::File>,
     open_dirs: HashMap<u32, std::fs::ReadDir>,
     enable_hostfs: bool,
-    hostfs_current_dir: std::path::PathBuf,
+    hostfs_root_dir: std::path::PathBuf,
+    mos_current_dir: MosPath,
     vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>,
 }
+
+// a path relative to the hostfs_root_dir
+pub struct MosPath(std::path::PathBuf);
 
 impl Machine for AgonMachine {
     fn peek(&self, address: u32) -> u8 {
@@ -170,9 +174,14 @@ impl AgonMachine {
             open_files: HashMap::new(),
             open_dirs: HashMap::new(),
             enable_hostfs: true,
-            hostfs_current_dir: std::path::PathBuf::new(),
+            hostfs_root_dir: std::env::current_dir().unwrap(),
+            mos_current_dir: MosPath(std::path::PathBuf::new()),
             vsync_counter
         }
+    }
+
+    pub fn set_sdcard_directory(&mut self, path: std::path::PathBuf) {
+        self.hostfs_root_dir = path;
     }
 
     fn maybe_fill_rx_buf(&mut self) -> Option<u8> {
@@ -445,7 +454,7 @@ impl AgonMachine {
         };
         //eprintln!("f_mkdir(\"{}\")", dir_name);
 
-        match std::fs::create_dir(self.hostfs_path().join(dir_name)) {
+        match std::fs::create_dir(self.host_path_from_mos_path_join(&dir_name)) {
             Ok(_) => {
                 // success
                 cpu.state.reg.set24(Reg16::HL, 0);
@@ -467,8 +476,8 @@ impl AgonMachine {
         };
         //eprintln!("f_rename(\"{}\", \"{}\")", old_name, new_name);
 
-        match std::fs::rename(self.hostfs_path().join(&old_name),
-                              self.hostfs_path().join(&new_name)) {
+        match std::fs::rename(self.host_path_from_mos_path_join(&old_name),
+                              self.host_path_from_mos_path_join(&new_name)) {
             Ok(_) => {
                 // success
                 cpu.state.reg.set24(Reg16::HL, 0);
@@ -495,18 +504,13 @@ impl AgonMachine {
         };
         //eprintln!("f_chdir({})", cd_to);
 
-        let mut new_path = self.hostfs_current_dir.clone();
-        if cd_to == ".." {
-            new_path.pop();
-        } else {
-            new_path = new_path.join(cd_to);
-        }
+        let new_path = self.mos_path_join(&cd_to);
 
-        match std::fs::metadata(std::env::current_dir().unwrap().join(&new_path)) {
+        match std::fs::metadata(self.mos_path_to_host_path(&new_path)) {
             Ok(metadata) => {
                 if metadata.is_dir() {
                     //eprintln!("setting path to {:?}", &new_path);
-                    self.hostfs_current_dir = new_path;
+                    self.mos_current_dir = new_path;
                     cpu.state.reg.set24(Reg16::HL, 0);
                 } else {
                     cpu.state.reg.set24(Reg16::HL, 1);
@@ -539,7 +543,7 @@ impl AgonMachine {
         };
         //eprintln!("f_unlink(\"{}\")", filename);
 
-        match std::fs::remove_file(self.hostfs_path().join(filename)) {
+        match std::fs::remove_file(self.host_path_from_mos_path_join(&filename)) {
             Ok(()) => {
                 cpu.state.reg.set24(Reg16::HL, 0); // ok
             }
@@ -568,7 +572,7 @@ impl AgonMachine {
         };
         //eprintln!("f_opendir(${:x}, \"{}\")", dir_ptr, path.trim_end());
 
-        match std::fs::read_dir(self.hostfs_path().join(path)) {
+        match std::fs::read_dir(self.host_path_from_mos_path_join(&path)) {
             Ok(dir) => {
                 // XXX should clear the DIR struct in z80 ram
                 
@@ -593,8 +597,87 @@ impl AgonMachine {
         env.subroutine_return();
     }
 
-    fn hostfs_path(&mut self) -> std::path::PathBuf {
-        std::env::current_dir().unwrap().join(&self.hostfs_current_dir)
+    fn mos_path_to_host_path(&mut self, path: &MosPath) -> std::path::PathBuf {
+        self.hostfs_root_dir.join(&path.0)
+    }
+
+    /**
+     * Return a new MosPath, `new_fragments` joined to mos_current_dir
+     */
+    fn mos_path_join(&mut self, new_fragments: &str) -> MosPath {
+        let mut full_path = self.mos_current_dir.0.clone();
+        let new_fragments_path = std::path::PathBuf::from(new_fragments);
+
+        for fragment in &new_fragments_path {
+            match fragment.to_str().unwrap() {
+                "." => {}
+                ".." => {
+                    full_path.pop();
+                }
+                "/" => {
+                    full_path = std::path::PathBuf::new();
+                }
+                f => {
+                    let abs_path = self.hostfs_root_dir.join(&full_path);
+                    
+                    // look for a case-insensitive match for this path fragment
+                    let matched_f = match std::fs::read_dir(abs_path) {
+                        Ok(dir) => {
+                            if let Some(ci_f) = dir.into_iter().find(|item| {
+                                match item {
+                                    Ok(dir_entry) => dir_entry.file_name().to_ascii_lowercase().into_string() == Ok(f.to_ascii_lowercase()),
+                                    Err(_) => false
+                                }
+                            }) {
+                                // found a case-insensitive match
+                                ci_f.unwrap().file_name()
+                            } else {
+                                std::ffi::OsString::from(f)
+                            }
+                        }
+                        Err(_) => {
+                            std::ffi::OsString::from(f)
+                        }
+                    };
+
+                    full_path.push(matched_f);
+                }
+            }
+        }
+
+        MosPath(full_path)
+    }
+
+    fn host_path_from_mos_path_join(&mut self, new_fragments: &str) -> std::path::PathBuf {
+        let rel_path = self.mos_path_join(new_fragments);
+        self.mos_path_to_host_path(&rel_path)
+    }
+
+    fn hostfs_mos_f_lseek(&mut self, cpu: &mut Cpu) {
+        let fptr = self._peek24(cpu.state.sp() + 3);
+        let offset = self._peek24(cpu.state.sp() + 6);
+
+        //eprintln!("f_lseek(${:x}, {})", fptr, offset);
+
+        match self.open_files.get(&fptr) {
+            Some(mut f) => {
+                match f.seek(SeekFrom::Start(offset as u64)) {
+                    Ok(pos) => {
+                        // save file position to FIL.fptr
+                        self._poke24(fptr + mos::FIL_MEMBER_FPTR, pos as u32);
+                        // success
+                        cpu.state.reg.set24(Reg16::HL, 0);
+                    }
+                    Err(_) => {
+                        cpu.state.reg.set24(Reg16::HL, 1); // error
+                    }
+                }
+            }
+            None => {
+                cpu.state.reg.set24(Reg16::HL, 1); // error
+            }
+        }
+        Environment::new(&mut cpu.state, self).subroutine_return();
     }
 
     fn hostfs_mos_f_open(&mut self, cpu: &mut Cpu) {
@@ -606,14 +689,7 @@ impl AgonMachine {
                 String::from_utf8_unchecked(z80_mem_tools::get_cstring(self, ptr))
             }
         };
-        let path = match filename.chars().nth(0) {
-            Some('/') => {
-                std::env::current_dir().unwrap().join(filename.chars().skip(1).collect::<String>().trim_end())
-            }
-            _ => {
-                self.hostfs_path().join(filename.trim_end())
-            }
-        };
+        let path = self.mos_path_join(&filename);
         let mode = self._peek24(cpu.state.sp() + 9);
         //eprintln!("f_open(${:x}, \"{}\", {})", fptr, &filename, mode);
         match std::fs::File::options()
@@ -621,7 +697,7 @@ impl AgonMachine {
             .write(mode & mos::FA_WRITE != 0)
             .create((mode & mos::FA_CREATE_NEW != 0) || (mode & mos::FA_CREATE_ALWAYS != 0))
             .truncate(mode & mos::FA_CREATE_ALWAYS != 0)
-            .open(path) {
+            .open(self.mos_path_to_host_path(&path)) {
             Ok(mut f) => {
                 // wipe the FIL structure
                 z80_mem_tools::memset(self, fptr, 0, mos::SIZEOF_MOS_FIL_STRUCT);
@@ -687,25 +763,26 @@ impl AgonMachine {
                 if cpu.state.pc() == MOS_103_MAP.f_open { self.hostfs_mos_f_open(&mut cpu); }
                 if cpu.state.pc() == MOS_103_MAP.f_write { self.hostfs_mos_f_write(&mut cpu); }
                 if cpu.state.pc() == MOS_103_MAP.f_chdir { self.hostfs_mos_f_chdir(&mut cpu); }
-                if cpu.state.pc() == MOS_103_MAP.f_chdrive { eprintln!("Un-trapped fatfs call: f_chdrive"); }
                 if cpu.state.pc() == MOS_103_MAP.f_closedir { self.hostfs_mos_f_closedir(&mut cpu); }
-                if cpu.state.pc() == MOS_103_MAP.f_getcwd { eprintln!("Un-trapped fatfs call: f_getcwd"); }
-                if cpu.state.pc() == MOS_103_MAP.f_getfree { eprintln!("Un-trapped fatfs call: f_getfree"); }
                 if cpu.state.pc() == MOS_103_MAP.f_getlabel { self.hostfs_mos_f_getlabel(&mut cpu); }
-                if cpu.state.pc() == MOS_103_MAP.f_lseek { eprintln!("Un-trapped fatfs call: f_lseek"); }
+                if cpu.state.pc() == MOS_103_MAP.f_lseek { self.hostfs_mos_f_lseek(&mut cpu); }
                 if cpu.state.pc() == MOS_103_MAP.f_mkdir { self.hostfs_mos_f_mkdir(&mut cpu); }
                 if cpu.state.pc() == MOS_103_MAP.f_mount { self.hostfs_mos_f_mount(&mut cpu); }
                 if cpu.state.pc() == MOS_103_MAP.f_opendir { self.hostfs_mos_f_opendir(&mut cpu); }
-                if cpu.state.pc() == MOS_103_MAP.f_printf { eprintln!("Un-trapped fatfs call: f_printf"); }
                 if cpu.state.pc() == MOS_103_MAP.f_putc { self.hostfs_mos_f_putc(&mut cpu); }
-                if cpu.state.pc() == MOS_103_MAP.f_puts { eprintln!("Un-trapped fatfs call: f_puts"); }
                 if cpu.state.pc() == MOS_103_MAP.f_readdir { self.hostfs_mos_f_readdir(&mut cpu); }
                 if cpu.state.pc() == MOS_103_MAP.f_rename { self.hostfs_mos_f_rename(&mut cpu); }
-                if cpu.state.pc() == MOS_103_MAP.f_setlabel { eprintln!("Un-trapped fatfs call: f_setlabel"); }
                 if cpu.state.pc() == MOS_103_MAP.f_stat { eprintln!("Un-trapped fatfs call: f_stat"); }
-                if cpu.state.pc() == MOS_103_MAP.f_sync { eprintln!("Un-trapped fatfs call: f_sync"); }
-                if cpu.state.pc() == MOS_103_MAP.f_truncate { eprintln!("Un-trapped fatfs call: f_truncate"); }
                 if cpu.state.pc() == MOS_103_MAP.f_unlink { self.hostfs_mos_f_unlink(&mut cpu); }
+                // never referenced in MOS
+                //if cpu.state.pc() == MOS_103_MAP._f_puts { eprintln!("Un-trapped fatfs call: f_puts"); }
+                //if cpu.state.pc() == MOS_103_MAP._f_setlabel { eprintln!("Un-trapped fatfs call: f_setlabel"); }
+                //if cpu.state.pc() == MOS_103_MAP._f_chdrive { eprintln!("Un-trapped fatfs call: f_chdrive"); }
+                //if cpu.state.pc() == MOS_103_MAP._f_getcwd { eprintln!("Un-trapped fatfs call: f_getcwd"); }
+                //if cpu.state.pc() == MOS_103_MAP._f_getfree { eprintln!("Un-trapped fatfs call: f_getfree"); }
+                //if cpu.state.pc() == MOS_103_MAP._f_printf { eprintln!("Un-trapped fatfs call: f_printf"); }
+                //if cpu.state.pc() == MOS_103_MAP._f_sync { eprintln!("Un-trapped fatfs call: f_sync"); }
+                //if cpu.state.pc() == MOS_103_MAP._f_truncate { eprintln!("Un-trapped fatfs call: f_truncate"); }
             }
 
             //if cpu.state.pc() == 0x40030 { _trace_for = 1000000; cpu.set_trace(true); }

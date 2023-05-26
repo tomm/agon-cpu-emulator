@@ -1,18 +1,28 @@
 Tom's Fake VDP Version 1.03
 Agon Quark MOS Version 1.03
 
-*ez80asm agon_regression_suite/helloworld.asm
+*ez80asm regression_suite/hostfs.asm
 Pass 1...
 Pass 2...
 Done
-*ez80asm agon_regression_suite/helloworld16.asm
+*load regression_suite/hostfs.bin
+*run
+quick
+brown
+*cd regression_suite
+*ez80asm helloworld.asm
 Pass 1...
 Pass 2...
 Done
-*load agon_regression_suite/helloworld.bin
+*ez80asm helloworld16.asm
+Pass 1...
+Pass 2...
+Done
+*cd /
+*load regression_suite/helloworld.bin
 *run
 Hello world ADL!
-*load agon_regression_suite/helloworld16.bin
+*load regression_suite/helloworld16.bin
 *run
 Hello world Z80!
 *disassemble &7c10 100
@@ -54,12 +64,13 @@ Hello world Z80!
 007C6C E6 02             ..     AND A,&02
 007C6E 20 08              .     JR NZ,&007C78
 007C70 21 07 00 00       !...   LD HL,&000007
-*load bbcbasic.bin
+*cd regression_suite
+*load ../bbcbasic.bin
 *run
 BBC BASIC (Z80) Version 3.00
 (C) Copyright R.T.Russell 1987
 
->LOAD "agon_regression_suite/animal.bbc"
+>LOAD "animal.bbc"
 >LIST
    10 CLS:@%=10:WIDTH 0:PRINT TAB(15)"ANIMAL"
    20 PRINT "Creative Computing Morristown New Jersey"''
@@ -207,15 +218,16 @@ BBC BASIC (Z80) Version 3.00
  1440   PRINT prompt$;:INPUT A$:A$=LEFT$(FNcapital(A$),1)
  1450 UNTIL A$="Y" OR A$="N"
  1460 =A$
->SAVE "agon_regression_suite/animal2.bas"
->SAVE "agon_regression_suite/animal2.bbc"
+>SAVE "animal2.bas"
+>SAVE "animal2.bbc"
 >*BYE 
+*cd ..
 *RUN
 BBC BASIC (Z80) Version 3.00
 (C) Copyright R.T.Russell 1987
 
 >LIST
->LOAD "agon_regression_suite/animal2.bbc"
+>LOAD "regression_suite/animal2.bbc"
 >LIST
    10 CLS:@%=10:WIDTH 0:PRINT TAB(15)"ANIMAL"
    20 PRINT "Creative Computing Morristown New Jersey"''
@@ -365,7 +377,7 @@ BBC BASIC (Z80) Version 3.00
  1460 =A$
 >NEW
 >LIST
->LOAD "agon_regression_suite/animal2.bas"
+>LOAD "regression_suite/animal2.bas"
 >LIST
    10 CLS:@%=10:WIDTH 0:PRINT TAB(15)"ANIMAL"
    20 PRINT "Creative Computing Morristown New Jersey"''
@@ -514,7 +526,7 @@ BBC BASIC (Z80) Version 3.00
  1450 UNTIL A$="Y" OR A$="N"
  1460 =A$
 >NEW
->LOAD "agon_regression_suite/sin_cos.bbc"
+>LOAD "regression_suite/sin_cos.bbc"
 >LIST
    10 FOR I = 0 TO 10
    20   PRINT "SIN("; I; ")="; SIN(I), "COS("; I; ")="; COS(I)

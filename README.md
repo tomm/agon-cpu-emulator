@@ -1,10 +1,11 @@
 # Agon CPU Emulator
 
-An emulator of the Agon Light CPU (eZ80) and CPU-controlled peripherals.
-A complete, graphical emulator involves an emulation of the Agon VDP.
+An emulator of the Agon Light CPU (eZ80) and CPU-controlled peripherals,
+with host filesystem integration.
 
-For full graphical Agon Light emulation, see [Agon Light Emulator](https://github.com/astralaster/agon-light-emulator),
-which uses *Agon CPU Emulator* to emulate the CPU-side of the system.
+For a complete Agon Light emulator, including the VDP (ESP32) side of the system,
+see [Agon Light Emulator](https://github.com/astralaster/agon-light-emulator),
+which uses this crate combined with a graphical (SDL) Agon VDP emulator.
 
 This Agon CPU Emulator can be used stand-alone, as a terminal-mode emulation
 of Agon Light:

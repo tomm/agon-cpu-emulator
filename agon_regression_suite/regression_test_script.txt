@@ -1,27 +1,34 @@
-ez80asm agon_regression_suite/helloworld.asm
-ez80asm agon_regression_suite/helloworld16.asm
-load agon_regression_suite/helloworld.bin
+ez80asm regression_suite/hostfs.asm
+load regression_suite/hostfs.bin
 run
-load agon_regression_suite/helloworld16.bin
+cd regression_suite
+ez80asm helloworld.asm
+ez80asm helloworld16.asm
+cd /
+load regression_suite/helloworld.bin
+run
+load regression_suite/helloworld16.bin
 run
 disassemble &7c10 100
-load bbcbasic.bin
+cd regression_suite
+load ../bbcbasic.bin
 run
-LOAD "agon_regression_suite/animal.bbc"
+LOAD "animal.bbc"
 LIST
-SAVE "agon_regression_suite/animal2.bas"
-SAVE "agon_regression_suite/animal2.bbc"
+SAVE "animal2.bas"
+SAVE "animal2.bbc"
 *BYE 
+cd ..
 RUN
 LIST
-LOAD "agon_regression_suite/animal2.bbc"
+LOAD "regression_suite/animal2.bbc"
 LIST
 NEW
 LIST
-LOAD "agon_regression_suite/animal2.bas"
+LOAD "regression_suite/animal2.bas"
 LIST
 NEW
-LOAD "agon_regression_suite/sin_cos.bbc"
+LOAD "regression_suite/sin_cos.bbc"
 LIST
 RUN
 *BYE
