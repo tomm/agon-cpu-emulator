@@ -50,13 +50,58 @@ start:
     ld a, 10
     rst.lil $10
 
+    ; f_stat on the sample.txt file
+    ld hl, filinfo_buf
+    ld de, filename
+    ld a, $96
+    rst.lil $8
+
+    ; print filename
+    ld hl, filinfo_buf + 22
+    ld bc, 0
+    xor a
+    rst.lil $18
+
+    ; newline
+    ld a, 10
+    rst.lil $10
+
+    ; check filesize is correct
+    ld hl, (filinfo_buf)
+    ld de, 46
+    or a
+    sbc hl, de
+    ld a, h
+    and a, l
+    jr nz, exit_fail
+
+exit_success:
+    ld hl, success_msg
+    ld bc, 0
+    xor a
+    rst.lil $18
+    jr exit
+
+exit_fail:
+    ld hl, failure_msg
+    ld bc, 0
+    xor a
+    rst.lil $18
+
+exit:
     pop iy
     pop ix
     ld hl, 0
     ret
+success_msg:
+    .db "hostfs test passed", 13, 10, 0
+failure_msg:
+    .db "hostfs test FAILED", 13, 10, 0
 filename:
     .db "regression_suite/sample.txt", 0
 file:
     .ds 1
 buffer:
     .ds 256
+filinfo_buf:
+    .ds 278 ; fatfs sizeof(FILINFO)

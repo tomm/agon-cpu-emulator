@@ -384,6 +384,26 @@ impl AgonMachine {
         env.subroutine_return();
     }
 
+    fn hostfs_set_filinfo_from_metadata(&mut self, z80_filinfo_ptr: u32, path: &std::path::PathBuf, metadata: &std::fs::Metadata) {
+        // XXX to_str can fail if not utf-8
+        // write file name
+        z80_mem_tools::memcpy_to_z80(
+            self, z80_filinfo_ptr + mos::FILINFO_MEMBER_FNAME_256BYTES,
+            path.file_name().unwrap().to_str().unwrap().as_bytes()
+        );
+
+        // write file length (U32)
+        self._poke24(z80_filinfo_ptr + mos::FILINFO_MEMBER_FSIZE_U32, metadata.len() as u32);
+        self.poke(z80_filinfo_ptr + mos::FILINFO_MEMBER_FSIZE_U32 + 3, (metadata.len() >> 24) as u8);
+
+        // is directory?
+        if metadata.is_dir() {
+            self.poke(z80_filinfo_ptr + mos::FILINFO_MEMBER_FATTRIB_U8, 0x10 /* AM_DIR */);
+        }
+
+        // TODO set fdate, ftime
+    }
+
     fn hostfs_mos_f_readdir(&mut self, cpu: &mut Cpu) {
         let dir_ptr = self._peek24(cpu.state.sp() + 3);
         let file_info_ptr = self._peek24(cpu.state.sp() + 6);
@@ -398,23 +418,7 @@ impl AgonMachine {
                     Some(Ok(dir_entry)) => {
                         let path = dir_entry.path();
                         if let Ok(metadata) = std::fs::metadata(&path) {
-                            // XXX to_str can fail if not utf-8
-                            // write file name
-                            z80_mem_tools::memcpy_to_z80(
-                                self, file_info_ptr + mos::FILINFO_MEMBER_FNAME_256BYTES,
-                                path.file_name().unwrap().to_str().unwrap().as_bytes()
-                            );
-
-                            // write file length (U32)
-                            self._poke24(file_info_ptr + mos::FILINFO_MEMBER_FSIZE_U32, metadata.len() as u32);
-                            self.poke(file_info_ptr + mos::FILINFO_MEMBER_FSIZE_U32 + 3, (metadata.len() >> 24) as u8);
-
-                            // is directory?
-                            if metadata.is_dir() {
-                                self.poke(file_info_ptr + mos::FILINFO_MEMBER_FATTRIB_U8, 0x10 /* AM_DIR */);
-                            }
-
-                            // TODO set fdate, ftime
+                            self.hostfs_set_filinfo_from_metadata(file_info_ptr, &path, &metadata);
 
                             // success
                             cpu.state.reg.set24(Reg16::HL, 0);
@@ -680,6 +684,42 @@ impl AgonMachine {
         Environment::new(&mut cpu.state, self).subroutine_return();
     }
 
+    fn hostfs_mos_f_stat(&mut self, cpu: &mut Cpu) {
+        let path_str = {
+            let ptr = self._peek24(cpu.state.sp() + 3);
+            unsafe {
+                String::from_utf8_unchecked(z80_mem_tools::get_cstring(self, ptr))
+            }
+        };
+        let filinfo_ptr = self._peek24(cpu.state.sp() + 6);
+        let path = self.host_path_from_mos_path_join(&path_str);
+        //eprintln!("f_stat(\"{}\", ${:x})", path_str, filinfo_ptr);
+
+        match std::fs::metadata(&path) {
+            Ok(metadata) => {
+                // clear the FILINFO struct
+                z80_mem_tools::memset(self, filinfo_ptr, 0, mos::SIZEOF_MOS_FILINFO_STRUCT);
+
+                self.hostfs_set_filinfo_from_metadata(filinfo_ptr, &path, &metadata);
+
+                // success
+                cpu.state.reg.set24(Reg16::HL, 0);
+            }
+            Err(e) => {
+                match e.kind() {
+                    std::io::ErrorKind::NotFound => {
+                        cpu.state.reg.set24(Reg16::HL, 4);
+                    }
+                    _ => {
+                        cpu.state.reg.set24(Reg16::HL, 1);
+                    }
+                }
+            }
+        }
+
+        Environment::new(&mut cpu.state, self).subroutine_return();
+    }
+
     fn hostfs_mos_f_open(&mut self, cpu: &mut Cpu) {
         let fptr = self._peek24(cpu.state.sp() + 3);
         let filename = {
@@ -725,8 +765,7 @@ impl AgonMachine {
             }
 
         }
-        let mut env = Environment::new(&mut cpu.state, self);
-        env.subroutine_return();
+        Environment::new(&mut cpu.state, self).subroutine_return();
     }
 
     pub fn start(&mut self) {
@@ -772,7 +811,7 @@ impl AgonMachine {
                 if cpu.state.pc() == MOS_103_MAP.f_putc { self.hostfs_mos_f_putc(&mut cpu); }
                 if cpu.state.pc() == MOS_103_MAP.f_readdir { self.hostfs_mos_f_readdir(&mut cpu); }
                 if cpu.state.pc() == MOS_103_MAP.f_rename { self.hostfs_mos_f_rename(&mut cpu); }
-                if cpu.state.pc() == MOS_103_MAP.f_stat { eprintln!("Un-trapped fatfs call: f_stat"); }
+                if cpu.state.pc() == MOS_103_MAP.f_stat { self.hostfs_mos_f_stat(&mut cpu); }
                 if cpu.state.pc() == MOS_103_MAP.f_unlink { self.hostfs_mos_f_unlink(&mut cpu); }
                 // never referenced in MOS
                 //if cpu.state.pc() == MOS_103_MAP._f_puts { eprintln!("Un-trapped fatfs call: f_puts"); }

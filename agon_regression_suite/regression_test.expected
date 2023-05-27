@@ -9,6 +9,8 @@ Done
 *run
 quick
 brown
+sample.txt
+hostfs test passed
 *cd regression_suite
 *ez80asm helloworld.asm
 Pass 1...
