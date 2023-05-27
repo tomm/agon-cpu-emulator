@@ -610,7 +610,7 @@ impl AgonMachine {
      */
     fn mos_path_join(&mut self, new_fragments: &str) -> MosPath {
         let mut full_path = self.mos_current_dir.0.clone();
-        let new_fragments_path = std::path::PathBuf::from(new_fragments);
+        let new_fragments_path = std::path::PathBuf::from(new_fragments.trim_end());
 
         for fragment in &new_fragments_path {
             match fragment.to_str().unwrap() {
