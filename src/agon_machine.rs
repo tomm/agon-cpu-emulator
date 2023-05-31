@@ -454,7 +454,7 @@ impl AgonMachine {
 
     fn hostfs_mos_f_mkdir(&mut self, cpu: &mut Cpu) {
         let dir_name = unsafe {
-            String::from_utf8_unchecked(z80_mem_tools::get_cstring(self, self._peek24(cpu.state.sp() + 3)))
+            String::from_utf8_unchecked(get_mos_path_string(self, self._peek24(cpu.state.sp() + 3)))
         };
         //eprintln!("f_mkdir(\"{}\")", dir_name);
 
@@ -473,10 +473,10 @@ impl AgonMachine {
 
     fn hostfs_mos_f_rename(&mut self, cpu: &mut Cpu) {
         let old_name = unsafe {
-            String::from_utf8_unchecked(z80_mem_tools::get_cstring(self, self._peek24(cpu.state.sp() + 3)))
+            String::from_utf8_unchecked(get_mos_path_string(self, self._peek24(cpu.state.sp() + 3)))
         };
         let new_name = unsafe {
-            String::from_utf8_unchecked(z80_mem_tools::get_cstring(self, self._peek24(cpu.state.sp() + 6)))
+            String::from_utf8_unchecked(get_mos_path_string(self, self._peek24(cpu.state.sp() + 6)))
         };
         //eprintln!("f_rename(\"{}\", \"{}\")", old_name, new_name);
 
@@ -504,7 +504,7 @@ impl AgonMachine {
         let cd_to_ptr = self._peek24(cpu.state.sp() + 3);
         let cd_to = unsafe {
             // MOS filenames may not be valid utf-8
-            String::from_utf8_unchecked(z80_mem_tools::get_cstring(self, cd_to_ptr))
+            String::from_utf8_unchecked(get_mos_path_string(self, cd_to_ptr))
         };
         //eprintln!("f_chdir({})", cd_to);
 
@@ -543,7 +543,7 @@ impl AgonMachine {
     fn hostfs_mos_f_unlink(&mut self, cpu: &mut Cpu) {
         let filename_ptr = self._peek24(cpu.state.sp() + 3);
         let filename = unsafe {
-            String::from_utf8_unchecked(z80_mem_tools::get_cstring(self, filename_ptr))
+            String::from_utf8_unchecked(get_mos_path_string(self, filename_ptr))
         };
         //eprintln!("f_unlink(\"{}\")", filename);
 
@@ -572,7 +572,7 @@ impl AgonMachine {
         let path_ptr = self._peek24(cpu.state.sp() + 6);
         let path = unsafe {
             // MOS filenames may not be valid utf-8
-            String::from_utf8_unchecked(z80_mem_tools::get_cstring(self, path_ptr))
+            String::from_utf8_unchecked(get_mos_path_string(self, path_ptr))
         };
         //eprintln!("f_opendir(${:x}, \"{}\")", dir_ptr, path.trim_end());
 
@@ -688,7 +688,7 @@ impl AgonMachine {
         let path_str = {
             let ptr = self._peek24(cpu.state.sp() + 3);
             unsafe {
-                String::from_utf8_unchecked(z80_mem_tools::get_cstring(self, ptr))
+                String::from_utf8_unchecked(get_mos_path_string(self, ptr))
             }
         };
         let filinfo_ptr = self._peek24(cpu.state.sp() + 6);
@@ -726,7 +726,7 @@ impl AgonMachine {
             let ptr = self._peek24(cpu.state.sp() + 6);
             // MOS filenames may not be valid utf-8
             unsafe {
-                String::from_utf8_unchecked(z80_mem_tools::get_cstring(self, ptr))
+                String::from_utf8_unchecked(get_mos_path_string(self, ptr))
             }
         };
         let path = self.mos_path_join(&filename);
@@ -830,6 +830,24 @@ impl AgonMachine {
             cpu.execute_instruction(self);
         }
     }
+}
+
+/**
+ * Like z80_mem_tools::get_cstring, except \r and \n are accepted as
+ * string terminators as well as \0
+ */
+fn get_mos_path_string<M: Machine>(machine: &M, address: u32) -> Vec<u8> {
+    let mut s: Vec<u8> = vec![];
+    let mut ptr = address;
+
+    loop {
+        match machine.peek(ptr) {
+            0 | 10 | 13 => break,
+            b => s.push(b)
+        }
+        ptr += 1;
+    }
+    s
 }
 
 // misc Machine tools
