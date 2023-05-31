@@ -31,7 +31,7 @@ fn send_keys(tx: &Sender<u8>, msg: &str) {
 }
 
 // Fake VDP. Minimal for MOS to work, outputting to stdout */
-fn handle_vdp(tx_to_ez80: &Sender<u8>, rx_from_ez80: &Receiver<u8>) -> bool {
+fn handle_vdp(tx_to_ez80: &Sender<u8>, rx_from_ez80: &Receiver<u8>, vdp_terminal_mode: &mut bool) -> bool {
     match rx_from_ez80.try_recv() {
         Ok(data) => {
             match data {
@@ -66,6 +66,10 @@ fn handle_vdp(tx_to_ez80: &Sender<u8>, rx_from_ez80: &Receiver<u8>) -> bool {
                                        (h & 0xff) as u8, ((h>>8) & 0xff) as u8, 80, 25, 1
                                     ]);
                                 }
+                                0xff => {
+                                    println!("ez80 request to enter VDP terminal mode.");
+                                    *vdp_terminal_mode = true;
+                                }
                                 v => {
                                     println!("unknown packet VDU 0x17, 0, 0x{:x}", v);
 
@@ -94,6 +98,7 @@ fn start_vdp(tx_vdp_to_ez80: Sender<u8>, rx_ez80_to_vdp: Receiver<u8>,
     let (tx_stdin, rx_stdin): (Sender<String>, Receiver<String>) = mpsc::channel();
     let mut start_time = Some(std::time::SystemTime::now());
     let mut last_vsync = std::time::SystemTime::now();
+    let mut vdp_terminal_mode = false;
 
     // to avoid blocking on stdin, use a thread and channel to read from it
     let _stdin_thread = std::thread::spawn(move || {
@@ -106,7 +111,7 @@ fn start_vdp(tx_vdp_to_ez80: Sender<u8>, rx_ez80_to_vdp: Receiver<u8>,
     println!("Tom\'s Fake VDP Version 1.03");
 
     loop {
-        if !handle_vdp(&tx_vdp_to_ez80, &rx_ez80_to_vdp) {
+        if !handle_vdp(&tx_vdp_to_ez80, &rx_ez80_to_vdp, &mut vdp_terminal_mode) {
             // no packets from ez80. sleep a little
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
@@ -128,8 +133,16 @@ fn start_vdp(tx_vdp_to_ez80: Sender<u8>, rx_ez80_to_vdp: Receiver<u8>,
             if elapsed > std::time::Duration::from_secs(1) {
                 match rx_stdin.try_recv() {
                     Ok(line) => {
-                        send_keys(&tx_vdp_to_ez80, &line);
-                        send_keys(&tx_vdp_to_ez80, "\r");
+                        if vdp_terminal_mode {
+                            for ch in line.as_bytes() {
+                                tx_vdp_to_ez80.send(*ch).unwrap();
+                                std::thread::sleep(std::time::Duration::from_micros(100));
+                            }
+                            tx_vdp_to_ez80.send(10).unwrap();
+                        } else {
+                            send_keys(&tx_vdp_to_ez80, &line);
+                            send_keys(&tx_vdp_to_ez80, "\r");
+                        }
                         start_time = Some(std::time::SystemTime::now());
                     }
                     Err(mpsc::TryRecvError::Disconnected) => {

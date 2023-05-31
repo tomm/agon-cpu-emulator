@@ -613,7 +613,7 @@ impl AgonMachine {
         let new_fragments_path = std::path::PathBuf::from(new_fragments.trim_end());
 
         for fragment in &new_fragments_path {
-            match fragment.to_str().unwrap() {
+            match fragment.to_str().unwrap_or("") {
                 "." => {}
                 ".." => {
                     full_path.pop();
@@ -824,7 +824,7 @@ impl AgonMachine {
                 //if cpu.state.pc() == MOS_103_MAP._f_truncate { eprintln!("Un-trapped fatfs call: f_truncate"); }
             }
 
-            //if cpu.state.pc() == 0x40030 { _trace_for = 1000000; cpu.set_trace(true); }
+            //if cpu.state.pc() == 0x40000 { _trace_for = 1000000; cpu.set_trace(true); }
             //if _trace_for == 0 { cpu.set_trace(false); } else { _trace_for -= 1; }
 
             cpu.execute_instruction(self);
