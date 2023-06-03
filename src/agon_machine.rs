@@ -249,13 +249,18 @@ impl AgonMachine {
         let mut buf = self._peek24(cpu.state.sp() + 3);
         let max_len = self._peek24(cpu.state.sp() + 6);
         let fptr = self._peek24(cpu.state.sp() + 9);
+        //eprintln!("f_gets(buf: ${:x}, len: ${:x}, fptr: ${:x})", buf, max_len, fptr);
 
         match self.open_files.get(&fptr) {
             Some(mut f) => {
                 let mut line = vec![];
                 let mut host_buf = vec![0; 1];
                 for _ in 0..max_len {
-                    f.read(host_buf.as_mut_slice()).unwrap();
+                    let n_read = f.read(host_buf.as_mut_slice()).unwrap();
+
+                    if n_read == 0 {
+                        break;
+                    }
                     line.push(host_buf[0]);
 
                     if host_buf[0] == 10 || host_buf[0] == 0 { break; }
