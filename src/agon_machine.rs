@@ -614,12 +614,14 @@ impl AgonMachine {
      * Return a new MosPath, `new_fragments` joined to mos_current_dir
      */
     fn mos_path_join(&mut self, new_fragments: &str) -> MosPath {
-        let mut full_path = self.mos_current_dir.0.clone();
-        let new_fragments_path = std::path::PathBuf::from(new_fragments.trim_end());
+        let mut full_path = match new_fragments.get(0..1) {
+            Some("/") | Some("\\") => std::path::PathBuf::new(),
+            _ => self.mos_current_dir.0.clone()
+        };
 
-        for fragment in &new_fragments_path {
-            match fragment.to_str().unwrap_or("") {
-                "." => {}
+        for fragment in new_fragments.split(|c| c == '/' || c == '\\') {
+            match fragment {
+                "" | "." => {}
                 ".." => {
                     full_path.pop();
                 }
