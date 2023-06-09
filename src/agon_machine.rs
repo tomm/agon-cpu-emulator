@@ -4,6 +4,7 @@ use std::sync::mpsc::{Sender, Receiver};
 use std::sync::mpsc;
 use std::collections::HashMap;
 use std::io::{ Seek, SeekFrom, Read, Write };
+use crate::debugger;
 
 const ROM_SIZE: usize = 0x40000; // 256 KiB
 const RAM_SIZE: usize = 0x80000; // 512 KiB
@@ -21,6 +22,7 @@ pub struct AgonMachine {
     hostfs_root_dir: std::path::PathBuf,
     mos_current_dir: MosPath,
     vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    last_vsync_count: u32,
 }
 
 // a path relative to the hostfs_root_dir
@@ -45,7 +47,6 @@ impl Machine for AgonMachine {
     }
 
     fn port_in(&mut self, address: u16) -> u8 {
-        //println!("IN({:02X})", address);
         if address == 0xa2 {
             0x0 // UART0 clear to send
         } else if address == 0xc0 {
@@ -68,29 +69,34 @@ impl Machine for AgonMachine {
             }
             // UART_LSR_ETX		EQU 	%40 ; Transmit empty (can send)
             // UART_LSR_RDY		EQU	%01		; Data ready (can receive)
+        } else if address == 0x9a {
+            // XXX what is this? it's busy
+            0x0
         } else if address == 0x81 /* timer0 low byte */ {
             std::thread::sleep(std::time::Duration::from_millis(10));
             0x0
         } else if address == 0x82 /* timer0 high byte */ {
             0x0
         } else {
+            //println!("IN({:02X})", address);
             0
         }
     }
     fn port_out(&mut self, address: u16, value: u8) {
-        //println!("OUT(${:02X}) = ${:x}", address, value);
         if address == 0xc0 /* UART0_REG_THR */ {
             /* Send data to VDP */
             self.tx.send(value).unwrap();
-
-            //print!("{}", char::from_u32(value as u32).unwrap());
-            //std::io::stdout().flush().unwrap();
+        } else if address == 0x9a {
+            // XXX what is this? it's busy
+        } else {
+            //println!("OUT(${:02X}) = ${:x}", address, value);
         }
     }
 }
 
 impl AgonMachine {
-    pub fn new(tx : Sender<u8>, rx : Receiver<u8>, vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>) -> AgonMachine {
+    pub fn new(tx : Sender<u8>, rx : Receiver<u8>,
+               vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>) -> AgonMachine {
         AgonMachine {
             mem: [0; MEM_SIZE],
             tx,
@@ -101,7 +107,8 @@ impl AgonMachine {
             enable_hostfs: true,
             hostfs_root_dir: std::env::current_dir().unwrap(),
             mos_current_dir: MosPath(std::path::PathBuf::new()),
-            vsync_counter
+            vsync_counter,
+            last_vsync_count: 0,
         }
     }
 
@@ -700,9 +707,50 @@ impl AgonMachine {
         Environment::new(&mut cpu.state, self).subroutine_return();
     }
 
-    pub fn start(&mut self) {
+    pub fn execute_instruction(&mut self, cpu: &mut Cpu) {
+        if self.enable_hostfs {
+            if cpu.state.pc() == mos::MOS_103_MAP.f_close { self.hostfs_mos_f_close(cpu); }
+            if cpu.state.pc() == mos::MOS_103_MAP.f_gets { self.hostfs_mos_f_gets(cpu); }
+            if cpu.state.pc() == mos::MOS_103_MAP.f_read { self.hostfs_mos_f_read(cpu); }
+            if cpu.state.pc() == mos::MOS_103_MAP.f_open { self.hostfs_mos_f_open(cpu); }
+            if cpu.state.pc() == mos::MOS_103_MAP.f_write { self.hostfs_mos_f_write(cpu); }
+            if cpu.state.pc() == mos::MOS_103_MAP.f_chdir { self.hostfs_mos_f_chdir(cpu); }
+            if cpu.state.pc() == mos::MOS_103_MAP.f_closedir { self.hostfs_mos_f_closedir(cpu); }
+            if cpu.state.pc() == mos::MOS_103_MAP.f_getlabel { self.hostfs_mos_f_getlabel(cpu); }
+            if cpu.state.pc() == mos::MOS_103_MAP.f_lseek { self.hostfs_mos_f_lseek(cpu); }
+            if cpu.state.pc() == mos::MOS_103_MAP.f_mkdir { self.hostfs_mos_f_mkdir(cpu); }
+            if cpu.state.pc() == mos::MOS_103_MAP.f_mount { self.hostfs_mos_f_mount(cpu); }
+            if cpu.state.pc() == mos::MOS_103_MAP.f_opendir { self.hostfs_mos_f_opendir(cpu); }
+            if cpu.state.pc() == mos::MOS_103_MAP.f_putc { self.hostfs_mos_f_putc(cpu); }
+            if cpu.state.pc() == mos::MOS_103_MAP.f_readdir { self.hostfs_mos_f_readdir(cpu); }
+            if cpu.state.pc() == mos::MOS_103_MAP.f_rename { self.hostfs_mos_f_rename(cpu); }
+            if cpu.state.pc() == mos::MOS_103_MAP.f_stat { self.hostfs_mos_f_stat(cpu); }
+            if cpu.state.pc() == mos::MOS_103_MAP.f_unlink { self.hostfs_mos_f_unlink(cpu); }
+            // never referenced in MOS
+            //if cpu.state.pc() == mos::MOS_103_MAP._f_puts { eprintln!("Un-trapped fatfs call: f_puts"); }
+            //if cpu.state.pc() == mos::MOS_103_MAP._f_setlabel { eprintln!("Un-trapped fatfs call: f_setlabel"); }
+            //if cpu.state.pc() == mos::MOS_103_MAP._f_chdrive { eprintln!("Un-trapped fatfs call: f_chdrive"); }
+            //if cpu.state.pc() == mos::MOS_103_MAP._f_getcwd { eprintln!("Un-trapped fatfs call: f_getcwd"); }
+            //if cpu.state.pc() == mos::MOS_103_MAP._f_getfree { eprintln!("Un-trapped fatfs call: f_getfree"); }
+            //if cpu.state.pc() == mos::MOS_103_MAP._f_printf { eprintln!("Un-trapped fatfs call: f_printf"); }
+            //if cpu.state.pc() == mos::MOS_103_MAP._f_sync { eprintln!("Un-trapped fatfs call: f_sync"); }
+            //if cpu.state.pc() == mos::MOS_103_MAP._f_truncate { eprintln!("Un-trapped fatfs call: f_truncate"); }
+        }
+
+        //if cpu.state.pc() == 0x40000 { _trace_for = 1000000000; cpu.set_trace(true); }
+        //if _trace_for == 0 { cpu.set_trace(false); } else { _trace_for -= 1; }
+
+        cpu.execute_instruction(self);
+    }
+
+    pub fn start(&mut self, debugger_con: Option<debugger::DebuggerConnection>) {
         let mut cpu = Cpu::new_ez80();
-        let mut last_vsync_count = 0_u32;
+        let mut debugger = if debugger_con.is_some() {
+            cpu.state.halted = true;
+            Some(debugger::DebuggerServer::new(debugger_con.unwrap()))
+        } else {
+            None
+        };
 
         self.load_mos();
 
@@ -711,55 +759,29 @@ impl AgonMachine {
         let mut _trace_for = 0;
 
         loop {
-            // fire uart interrupt
-            if cpu.state.instructions_executed % 1024 == 0 && self.maybe_fill_rx_buf() != None {
-                let mut env = Environment::new(&mut cpu.state, self);
-                env.interrupt(0x18); // uart0_handler
+            if let Some(ref mut ds) = debugger {
+                ds.tick(self, &mut cpu);
             }
 
-            // fire vsync interrupt
-            {
-                let cur_vsync_count = self.vsync_counter.load(std::sync::atomic::Ordering::Relaxed);
-                if cur_vsync_count != last_vsync_count {
-                    last_vsync_count = cur_vsync_count;
+            if !cpu.is_halted() {
+                // fire uart interrupt
+                if cpu.state.instructions_executed % 1024 == 0 && self.maybe_fill_rx_buf() != None {
                     let mut env = Environment::new(&mut cpu.state, self);
-                    env.interrupt(0x32);
+                    env.interrupt(0x18); // uart0_handler
+                }
+
+                // fire vsync interrupt
+                {
+                    let cur_vsync_count = self.vsync_counter.load(std::sync::atomic::Ordering::Relaxed);
+                    if cur_vsync_count != self.last_vsync_count {
+                        self.last_vsync_count = cur_vsync_count;
+                        let mut env = Environment::new(&mut cpu.state, self);
+                        env.interrupt(0x32);
+                    }
                 }
             }
-
-            if self.enable_hostfs {
-                if cpu.state.pc() == mos::MOS_103_MAP.f_close { self.hostfs_mos_f_close(&mut cpu); }
-                if cpu.state.pc() == mos::MOS_103_MAP.f_gets { self.hostfs_mos_f_gets(&mut cpu); }
-                if cpu.state.pc() == mos::MOS_103_MAP.f_read { self.hostfs_mos_f_read(&mut cpu); }
-                if cpu.state.pc() == mos::MOS_103_MAP.f_open { self.hostfs_mos_f_open(&mut cpu); }
-                if cpu.state.pc() == mos::MOS_103_MAP.f_write { self.hostfs_mos_f_write(&mut cpu); }
-                if cpu.state.pc() == mos::MOS_103_MAP.f_chdir { self.hostfs_mos_f_chdir(&mut cpu); }
-                if cpu.state.pc() == mos::MOS_103_MAP.f_closedir { self.hostfs_mos_f_closedir(&mut cpu); }
-                if cpu.state.pc() == mos::MOS_103_MAP.f_getlabel { self.hostfs_mos_f_getlabel(&mut cpu); }
-                if cpu.state.pc() == mos::MOS_103_MAP.f_lseek { self.hostfs_mos_f_lseek(&mut cpu); }
-                if cpu.state.pc() == mos::MOS_103_MAP.f_mkdir { self.hostfs_mos_f_mkdir(&mut cpu); }
-                if cpu.state.pc() == mos::MOS_103_MAP.f_mount { self.hostfs_mos_f_mount(&mut cpu); }
-                if cpu.state.pc() == mos::MOS_103_MAP.f_opendir { self.hostfs_mos_f_opendir(&mut cpu); }
-                if cpu.state.pc() == mos::MOS_103_MAP.f_putc { self.hostfs_mos_f_putc(&mut cpu); }
-                if cpu.state.pc() == mos::MOS_103_MAP.f_readdir { self.hostfs_mos_f_readdir(&mut cpu); }
-                if cpu.state.pc() == mos::MOS_103_MAP.f_rename { self.hostfs_mos_f_rename(&mut cpu); }
-                if cpu.state.pc() == mos::MOS_103_MAP.f_stat { self.hostfs_mos_f_stat(&mut cpu); }
-                if cpu.state.pc() == mos::MOS_103_MAP.f_unlink { self.hostfs_mos_f_unlink(&mut cpu); }
-                // never referenced in MOS
-                //if cpu.state.pc() == mos::MOS_103_MAP._f_puts { eprintln!("Un-trapped fatfs call: f_puts"); }
-                //if cpu.state.pc() == mos::MOS_103_MAP._f_setlabel { eprintln!("Un-trapped fatfs call: f_setlabel"); }
-                //if cpu.state.pc() == mos::MOS_103_MAP._f_chdrive { eprintln!("Un-trapped fatfs call: f_chdrive"); }
-                //if cpu.state.pc() == mos::MOS_103_MAP._f_getcwd { eprintln!("Un-trapped fatfs call: f_getcwd"); }
-                //if cpu.state.pc() == mos::MOS_103_MAP._f_getfree { eprintln!("Un-trapped fatfs call: f_getfree"); }
-                //if cpu.state.pc() == mos::MOS_103_MAP._f_printf { eprintln!("Un-trapped fatfs call: f_printf"); }
-                //if cpu.state.pc() == mos::MOS_103_MAP._f_sync { eprintln!("Un-trapped fatfs call: f_sync"); }
-                //if cpu.state.pc() == mos::MOS_103_MAP._f_truncate { eprintln!("Un-trapped fatfs call: f_truncate"); }
-            }
-
-            if cpu.state.pc() == 0x40000 { _trace_for = 1000000000; cpu.set_trace(true); }
-            if _trace_for == 0 { cpu.set_trace(false); } else { _trace_for -= 1; }
-
-            cpu.execute_instruction(self);
+            
+            self.execute_instruction(&mut cpu);
         }
     }
 }

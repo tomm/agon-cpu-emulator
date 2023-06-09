@@ -1,6 +1,6 @@
 [package]
 name = "agon-cpu-emulator"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 authors = ["Tom Morton <tomm8086@gmail.com>"]
 license = "BSD-3-Clause"
@@ -12,5 +12,5 @@ repository = "https://github.com/tomm/agon-cpu-emulator"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ez80 = { git = "https://github.com/tomm/ez80.git", rev="f0ed2a931eac592c385d0c32f071a4c133238ed6"}
+ez80 = { git = "https://github.com/tomm/ez80.git", rev="f3598df34bfa1c2790f4ad041d4e06956447344a"}
 #ez80 = { path = "../ez80" }
