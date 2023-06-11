@@ -1,4 +1,4 @@
-use agon_cpu_emulator::AgonMachine;
+use agon_cpu_emulator::{ AgonMachine, AgonMachineConfig };
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
 use std::io::{ self, BufRead, Write };
@@ -157,13 +157,18 @@ fn start_vdp(tx_vdp_to_ez80: Sender<u8>, rx_ez80_to_vdp: Receiver<u8>,
 }
 
 fn main() {
-    let (tx_vdp_to_ez80, rx_vdp_to_ez80): (Sender<u8>, Receiver<u8>) = mpsc::channel();
-    let (tx_ez80_to_vdp, rx_ez80_to_vdp): (Sender<u8>, Receiver<u8>) = mpsc::channel();
+    let (tx_vdp_to_ez80, from_vdp): (Sender<u8>, Receiver<u8>) = mpsc::channel();
+    let (to_vdp, rx_ez80_to_vdp): (Sender<u8>, Receiver<u8>) = mpsc::channel();
     let vsync_counter_vdp = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
     let vsync_counter_ez80 = vsync_counter_vdp.clone();
 
     let _cpu_thread = std::thread::spawn(move || {
-        let mut machine = AgonMachine::new(tx_ez80_to_vdp, rx_vdp_to_ez80, vsync_counter_ez80);
+        let mut machine = AgonMachine::new(AgonMachineConfig {
+            to_vdp,
+            from_vdp,
+            vsync_counter: vsync_counter_ez80,
+            clockspeed_hz: 18_432_000
+        });
         machine.set_sdcard_directory(std::env::current_dir().unwrap().join("sdcard"));
         machine.start(None);
     });

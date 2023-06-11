@@ -23,6 +23,7 @@ pub struct AgonMachine {
     mos_current_dir: MosPath,
     vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>,
     last_vsync_count: u32,
+    clockspeed_hz: u64,
 }
 
 // a path relative to the hostfs_root_dir
@@ -94,21 +95,28 @@ impl Machine for AgonMachine {
     }
 }
 
+pub struct AgonMachineConfig {
+    pub to_vdp: Sender<u8>,
+    pub from_vdp: Receiver<u8>,
+    pub vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    pub clockspeed_hz: u64,
+}
+
 impl AgonMachine {
-    pub fn new(tx : Sender<u8>, rx : Receiver<u8>,
-               vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>) -> AgonMachine {
+    pub fn new(config: AgonMachineConfig) -> Self {
         AgonMachine {
             mem: [0; MEM_SIZE],
-            tx,
-            rx,
+            tx: config.to_vdp,
+            rx: config.from_vdp,
             rx_buf: None,
             open_files: HashMap::new(),
             open_dirs: HashMap::new(),
             enable_hostfs: true,
             hostfs_root_dir: std::env::current_dir().unwrap(),
             mos_current_dir: MosPath(std::path::PathBuf::new()),
-            vsync_counter,
+            vsync_counter: config.vsync_counter,
             last_vsync_count: 0,
+            clockspeed_hz: config.clockspeed_hz,
         }
     }
 
@@ -758,6 +766,12 @@ impl AgonMachine {
         cpu.state.set_pc(0x0000);
 
         let mut _trace_for = 0;
+        let mut inst_count_last_vsync = 0;
+        // As the cpu emulator doesn't account for cycles, just
+        // for instructions executed, we use a fudge factor (/ 2),
+        // estimating 2 cycles per instruction, which is not far off
+        // being right for the benchm*.bbc programs.
+        let cycles_per_vsync: u64 = (self.clockspeed_hz / 60) / 2;
 
         loop {
             if let Some(ref mut ds) = debugger {
@@ -775,6 +789,9 @@ impl AgonMachine {
                 {
                     let cur_vsync_count = self.vsync_counter.load(std::sync::atomic::Ordering::Relaxed);
                     if cur_vsync_count != self.last_vsync_count {
+                        //println!("{} inst this vsync\n", cpu.state.instructions_executed - inst_count_last_vsync);
+                        inst_count_last_vsync = cpu.state.instructions_executed;
+
                         self.last_vsync_count = cur_vsync_count;
                         let mut env = Environment::new(&mut cpu.state, self);
                         env.interrupt(0x32);
@@ -782,7 +799,11 @@ impl AgonMachine {
                 }
             }
             
-            self.execute_instruction(&mut cpu);
+            if cpu.state.instructions_executed - inst_count_last_vsync < cycles_per_vsync {
+                self.execute_instruction(&mut cpu);
+            } else {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
         }
     }
 }
