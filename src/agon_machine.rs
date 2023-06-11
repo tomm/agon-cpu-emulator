@@ -708,36 +708,37 @@ impl AgonMachine {
     }
 
     pub fn execute_instruction(&mut self, cpu: &mut Cpu) {
-        if self.enable_hostfs {
-            if cpu.state.pc() == mos::MOS_103_MAP.f_close { self.hostfs_mos_f_close(cpu); }
-            if cpu.state.pc() == mos::MOS_103_MAP.f_gets { self.hostfs_mos_f_gets(cpu); }
-            if cpu.state.pc() == mos::MOS_103_MAP.f_read { self.hostfs_mos_f_read(cpu); }
-            if cpu.state.pc() == mos::MOS_103_MAP.f_open { self.hostfs_mos_f_open(cpu); }
-            if cpu.state.pc() == mos::MOS_103_MAP.f_write { self.hostfs_mos_f_write(cpu); }
-            if cpu.state.pc() == mos::MOS_103_MAP.f_chdir { self.hostfs_mos_f_chdir(cpu); }
-            if cpu.state.pc() == mos::MOS_103_MAP.f_closedir { self.hostfs_mos_f_closedir(cpu); }
-            if cpu.state.pc() == mos::MOS_103_MAP.f_getlabel { self.hostfs_mos_f_getlabel(cpu); }
-            if cpu.state.pc() == mos::MOS_103_MAP.f_lseek { self.hostfs_mos_f_lseek(cpu); }
-            if cpu.state.pc() == mos::MOS_103_MAP.f_mkdir { self.hostfs_mos_f_mkdir(cpu); }
-            if cpu.state.pc() == mos::MOS_103_MAP.f_mount { self.hostfs_mos_f_mount(cpu); }
-            if cpu.state.pc() == mos::MOS_103_MAP.f_opendir { self.hostfs_mos_f_opendir(cpu); }
-            if cpu.state.pc() == mos::MOS_103_MAP.f_putc { self.hostfs_mos_f_putc(cpu); }
-            if cpu.state.pc() == mos::MOS_103_MAP.f_readdir { self.hostfs_mos_f_readdir(cpu); }
-            if cpu.state.pc() == mos::MOS_103_MAP.f_rename { self.hostfs_mos_f_rename(cpu); }
-            if cpu.state.pc() == mos::MOS_103_MAP.f_stat { self.hostfs_mos_f_stat(cpu); }
-            if cpu.state.pc() == mos::MOS_103_MAP.f_unlink { self.hostfs_mos_f_unlink(cpu); }
+        let pc = cpu.state.pc();
+        if self.enable_hostfs && pc < 0x40000 {
+            if pc == mos::MOS_103_MAP.f_close { self.hostfs_mos_f_close(cpu); }
+            if pc == mos::MOS_103_MAP.f_gets { self.hostfs_mos_f_gets(cpu); }
+            if pc == mos::MOS_103_MAP.f_read { self.hostfs_mos_f_read(cpu); }
+            if pc == mos::MOS_103_MAP.f_open { self.hostfs_mos_f_open(cpu); }
+            if pc == mos::MOS_103_MAP.f_write { self.hostfs_mos_f_write(cpu); }
+            if pc == mos::MOS_103_MAP.f_chdir { self.hostfs_mos_f_chdir(cpu); }
+            if pc == mos::MOS_103_MAP.f_closedir { self.hostfs_mos_f_closedir(cpu); }
+            if pc == mos::MOS_103_MAP.f_getlabel { self.hostfs_mos_f_getlabel(cpu); }
+            if pc == mos::MOS_103_MAP.f_lseek { self.hostfs_mos_f_lseek(cpu); }
+            if pc == mos::MOS_103_MAP.f_mkdir { self.hostfs_mos_f_mkdir(cpu); }
+            if pc == mos::MOS_103_MAP.f_mount { self.hostfs_mos_f_mount(cpu); }
+            if pc == mos::MOS_103_MAP.f_opendir { self.hostfs_mos_f_opendir(cpu); }
+            if pc == mos::MOS_103_MAP.f_putc { self.hostfs_mos_f_putc(cpu); }
+            if pc == mos::MOS_103_MAP.f_readdir { self.hostfs_mos_f_readdir(cpu); }
+            if pc == mos::MOS_103_MAP.f_rename { self.hostfs_mos_f_rename(cpu); }
+            if pc == mos::MOS_103_MAP.f_stat { self.hostfs_mos_f_stat(cpu); }
+            if pc == mos::MOS_103_MAP.f_unlink { self.hostfs_mos_f_unlink(cpu); }
             // never referenced in MOS
-            //if cpu.state.pc() == mos::MOS_103_MAP._f_puts { eprintln!("Un-trapped fatfs call: f_puts"); }
-            //if cpu.state.pc() == mos::MOS_103_MAP._f_setlabel { eprintln!("Un-trapped fatfs call: f_setlabel"); }
-            //if cpu.state.pc() == mos::MOS_103_MAP._f_chdrive { eprintln!("Un-trapped fatfs call: f_chdrive"); }
-            //if cpu.state.pc() == mos::MOS_103_MAP._f_getcwd { eprintln!("Un-trapped fatfs call: f_getcwd"); }
-            //if cpu.state.pc() == mos::MOS_103_MAP._f_getfree { eprintln!("Un-trapped fatfs call: f_getfree"); }
-            //if cpu.state.pc() == mos::MOS_103_MAP._f_printf { eprintln!("Un-trapped fatfs call: f_printf"); }
-            //if cpu.state.pc() == mos::MOS_103_MAP._f_sync { eprintln!("Un-trapped fatfs call: f_sync"); }
-            //if cpu.state.pc() == mos::MOS_103_MAP._f_truncate { eprintln!("Un-trapped fatfs call: f_truncate"); }
+            //if pc == mos::MOS_103_MAP._f_puts { eprintln!("Un-trapped fatfs call: f_puts"); }
+            //if pc == mos::MOS_103_MAP._f_setlabel { eprintln!("Un-trapped fatfs call: f_setlabel"); }
+            //if pc == mos::MOS_103_MAP._f_chdrive { eprintln!("Un-trapped fatfs call: f_chdrive"); }
+            //if pc == mos::MOS_103_MAP._f_getcwd { eprintln!("Un-trapped fatfs call: f_getcwd"); }
+            //if pc == mos::MOS_103_MAP._f_getfree { eprintln!("Un-trapped fatfs call: f_getfree"); }
+            //if pc == mos::MOS_103_MAP._f_printf { eprintln!("Un-trapped fatfs call: f_printf"); }
+            //if pc == mos::MOS_103_MAP._f_sync { eprintln!("Un-trapped fatfs call: f_sync"); }
+            //if pc == mos::MOS_103_MAP._f_truncate { eprintln!("Un-trapped fatfs call: f_truncate"); }
         }
 
-        //if cpu.state.pc() == 0x40000 { _trace_for = 1000000000; cpu.set_trace(true); }
+        //if pc == 0x40000 { _trace_for = 1000000000; cpu.set_trace(true); }
         //if _trace_for == 0 { cpu.set_trace(false); } else { _trace_for -= 1; }
 
         cpu.execute_instruction(self);
