@@ -772,11 +772,15 @@ impl AgonMachine {
         // estimating 2 cycles per instruction, which is not far off
         // being right for the benchm*.bbc programs.
         let cycles_per_10ms: u64 = (self.clockspeed_hz / 100) / 2;
-        let mut cycle_account_point = std::time::SystemTime::now().checked_add(std::time::Duration::from_millis(10)).unwrap();
+        let mut cycle_account_point = std::time::Instant::now();
 
         loop {
             if let Some(ref mut ds) = debugger {
                 ds.tick(self, &mut cpu);
+            }
+
+            if cpu.is_halted() {
+                std::thread::sleep(std::time::Duration::from_millis(10));
             }
 
             if !cpu.is_halted() {
@@ -797,11 +801,10 @@ impl AgonMachine {
                 }
             }
             
-            let now = std::time::SystemTime::now();
-            if now >= cycle_account_point {
+            if cycle_account_point.elapsed() >= std::time::Duration::from_millis(10) {
                 //println!("{} inst this 10ms\n", cpu.state.instructions_executed - inst_count_end_last_10ms);
                 inst_count_end_last_10ms = cpu.state.instructions_executed;
-                cycle_account_point = now.checked_add(std::time::Duration::from_millis(10)).unwrap();
+                cycle_account_point += std::time::Duration::from_millis(10);
             }
 
             if cpu.state.instructions_executed - inst_count_end_last_10ms < cycles_per_10ms {
