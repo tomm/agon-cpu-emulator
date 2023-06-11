@@ -171,7 +171,7 @@ impl DebuggerServer {
             // iz80 (which ez80 is based on) doesn't allow disassembling
             // without advancing the PC, so we hack around this
             let pc = cpu.state.pc();
-            (pc_instruction, _) = cpu.disasm_instruction(machine);
+            pc_instruction = cpu.disasm_instruction(machine);
             cpu.state.set_pc(pc);
         }
 
