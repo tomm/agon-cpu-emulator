@@ -766,12 +766,13 @@ impl AgonMachine {
         cpu.state.set_pc(0x0000);
 
         let mut _trace_for = 0;
-        let mut inst_count_last_vsync = 0;
+        let mut inst_count_end_last_10ms = 0;
         // As the cpu emulator doesn't account for cycles, just
         // for instructions executed, we use a fudge factor (/ 2),
         // estimating 2 cycles per instruction, which is not far off
         // being right for the benchm*.bbc programs.
-        let cycles_per_vsync: u64 = (self.clockspeed_hz / 60) / 2;
+        let cycles_per_10ms: u64 = (self.clockspeed_hz / 100) / 2;
+        let mut cycle_account_point = std::time::SystemTime::now().checked_add(std::time::Duration::from_millis(10)).unwrap();
 
         loop {
             if let Some(ref mut ds) = debugger {
@@ -789,9 +790,6 @@ impl AgonMachine {
                 {
                     let cur_vsync_count = self.vsync_counter.load(std::sync::atomic::Ordering::Relaxed);
                     if cur_vsync_count != self.last_vsync_count {
-                        //println!("{} inst this vsync\n", cpu.state.instructions_executed - inst_count_last_vsync);
-                        inst_count_last_vsync = cpu.state.instructions_executed;
-
                         self.last_vsync_count = cur_vsync_count;
                         let mut env = Environment::new(&mut cpu.state, self);
                         env.interrupt(0x32);
@@ -799,7 +797,14 @@ impl AgonMachine {
                 }
             }
             
-            if cpu.state.instructions_executed - inst_count_last_vsync < cycles_per_vsync {
+            let now = std::time::SystemTime::now();
+            if now >= cycle_account_point {
+                //println!("{} inst this 10ms\n", cpu.state.instructions_executed - inst_count_end_last_10ms);
+                inst_count_end_last_10ms = cpu.state.instructions_executed;
+                cycle_account_point = now.checked_add(std::time::Duration::from_millis(10)).unwrap();
+            }
+
+            if cpu.state.instructions_executed - inst_count_end_last_10ms < cycles_per_10ms {
                 self.execute_instruction(&mut cpu);
             } else {
                 std::thread::sleep(std::time::Duration::from_millis(1));
