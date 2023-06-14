@@ -7,3 +7,4 @@ pub use agon_machine::AgonMachineConfig;
 pub use debugger::DebuggerConnection;
 pub use debugger::DebugCmd;
 pub use debugger::DebugResp;
+pub use debugger::Trigger;
