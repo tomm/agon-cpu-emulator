@@ -33,7 +33,6 @@ pub enum DebugResp {
     IsPaused(bool),
     Pong,
     Message(String),
-    TriggerRan(String),
     Registers(ez80::Registers),
     State {
         registers: ez80::Registers,
@@ -47,6 +46,7 @@ pub enum DebugResp {
     },
     // (start, disasm, bytes)
     Disassembly {
+        pc: u32,
         adl: bool,
         disasm: Vec<ez80::disassembler::Disasm>
     },
@@ -57,7 +57,6 @@ pub enum DebugResp {
 pub struct Trigger {
     pub address: u32,
     pub once: bool,
-    pub msg: String,
     pub actions: Vec<DebugCmd>
 }
 
@@ -71,18 +70,39 @@ impl DebuggerServer {
         DebuggerServer { con, triggers: vec![] }
     }
 
+    fn on_out_of_bounds(&mut self, machine: &mut AgonMachine, cpu: &mut ez80::Cpu) -> bool {
+        if let Some(address) = machine.mem_out_of_bounds.get() {
+            self.con.tx.send(DebugResp::IsPaused(true)).unwrap();
+            self.con.tx.send(DebugResp::Message(format!("Out of bounds memory access at PC=${:x}: ${:x}", machine.last_pc, address))).unwrap();
+            self.send_disassembly(machine, cpu, None, machine.last_pc, machine.last_pc+1);
+            self.send_state(machine, cpu);
+
+            cpu.state.halted = true;
+            true
+        } else {
+            false
+        }
+    }
+
     /// Called before each instruction is executed
     pub fn tick(&mut self, machine: &mut AgonMachine, cpu: &mut ez80::Cpu) {
         let pc = cpu.state.pc();
 
+        // catch out of bounds memory accesses
+        self.on_out_of_bounds(machine, cpu);
+
         // check triggers
         if !cpu.is_halted() {
-            for b in &self.triggers {
-                if b.address == pc {
-                    cpu.state.halted = true;
-                    self.con.tx.send(DebugResp::TriggerRan(b.msg.clone())).unwrap();
-                    self.send_state(machine, cpu);
-                    break;
+            let to_run: Vec<Trigger> = self
+                .triggers
+                .iter()
+                .filter(|t| t.address == pc)
+                .map(|f| f.clone())
+                .collect();
+
+            for t in to_run {
+                for a in &t.actions {
+                    self.handle_debug_cmd(a, machine, cpu);
                 }
             }
         }
@@ -92,19 +112,24 @@ impl DebuggerServer {
 
         loop {
             match self.con.rx.try_recv() {
-                Ok(cmd) => self.handle_debug_cmd(cmd, machine, cpu),
-                Err(mpsc::TryRecvError::Disconnected) => return,
-                Err(mpsc::TryRecvError::Empty) => return
+                Ok(cmd) => self.handle_debug_cmd(&cmd, machine, cpu),
+                Err(mpsc::TryRecvError::Disconnected) => break,
+                Err(mpsc::TryRecvError::Empty) => break,
             }
         }
+        
+        // clear any out of bounds memory access marker (either from z80 code
+        // prior to this function's invocation, or caused by memory accesses
+        // of the debugger here.
+        machine.mem_out_of_bounds.set(None);
     }
 
-    fn handle_debug_cmd(&mut self, cmd: DebugCmd, machine: &mut AgonMachine, cpu: &mut ez80::Cpu) {
+    fn handle_debug_cmd(&mut self, cmd: &DebugCmd, machine: &mut AgonMachine, cpu: &mut ez80::Cpu) {
         let pc = cpu.state.pc();
 
         match cmd {
             DebugCmd::Message(s) => {
-                self.con.tx.send(DebugResp::Message(s)).unwrap()
+                self.con.tx.send(DebugResp::Message(s.clone())).unwrap()
             }
             DebugCmd::ListTriggers => {
                 self.con.tx.send(DebugResp::Triggers(self.triggers.clone())).unwrap();
@@ -112,11 +137,11 @@ impl DebuggerServer {
             DebugCmd::DisassemblePc { adl } => {
                 let start = cpu.state.pc();
                 let end = start + 0x20;
-                self.send_disassembly(machine, cpu, adl, start, end);
+                self.send_disassembly(machine, cpu, *adl, start, end);
             }
             DebugCmd::Disassemble { adl, start, mut end } => {
-                if end <= start { end = start + 0x20 };
-                self.send_disassembly(machine, cpu, adl, start, end);
+                if end <= *start { end = *start + 0x20 };
+                self.send_disassembly(machine, cpu, *adl, *start, end);
             }
             DebugCmd::StepOver => {
                 // if the opcode at PC is a call, set a 'once' breakpoint on the
@@ -137,8 +162,11 @@ impl DebuggerServer {
                         self.triggers.push(Trigger {
                             address: addr_next,
                             once: true,
-                            msg: "Stepped over CALL".to_string(),
-                            actions: vec![]
+                            actions: vec![
+                                DebugCmd::Pause,
+                                DebugCmd::Message("Stepped over CALL".to_string()),
+                                DebugCmd::GetState,
+                            ]
                         });
                         cpu.state.halted = false;
                         self.con.tx.send(DebugResp::IsPaused(false)).unwrap();
@@ -161,28 +189,32 @@ impl DebuggerServer {
             }
             DebugCmd::Pause => {
                 cpu.state.halted = true;
-                self.con.tx.send(DebugResp::Pong).unwrap();
+                self.con.tx.send(DebugResp::IsPaused(true)).unwrap();
             }
             DebugCmd::Continue => {
+                machine.mem_out_of_bounds.set(None);
                 cpu.state.halted = false;
                 // force one instruction to be executed, just to
                 // get over any breakpoint on the current PC
                 machine.execute_instruction(cpu);
-                self.con.tx.send(DebugResp::IsPaused(false)).unwrap();
+
+                if !self.on_out_of_bounds(machine, cpu) {
+                    self.con.tx.send(DebugResp::IsPaused(false)).unwrap();
+                }
             }
             DebugCmd::AddTrigger(t) => {
-                self.triggers.push(t);
+                self.triggers.push(t.clone());
                 self.con.tx.send(DebugResp::Pong).unwrap();
             }
             DebugCmd::DeleteTrigger(addr) => {
-                self.triggers.retain(|b| b.address != addr);
+                self.triggers.retain(|b| b.address != *addr);
                 self.con.tx.send(DebugResp::Pong).unwrap();
             }
             DebugCmd::Ping => self.con.tx.send(DebugResp::Pong).unwrap(),
             DebugCmd::GetRegisters => self.send_registers(cpu),
             DebugCmd::GetState => self.send_state(machine, cpu),
             DebugCmd::GetMemory { start, len } => {
-                self.send_mem(machine, cpu, start, len);
+                self.send_mem(machine, cpu, *start, *len);
             }
         }
     }
@@ -191,6 +223,7 @@ impl DebuggerServer {
         let dis = ez80::disassembler::disassemble(machine, cpu, adl_override, start, end);
 
         self.con.tx.send(DebugResp::Disassembly {
+            pc: cpu.state.pc(),
             adl: cpu.state.reg.adl,
             disasm: dis
         }).unwrap();
