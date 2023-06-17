@@ -4,7 +4,7 @@ use std::sync::mpsc::{Sender, Receiver};
 use std::sync::mpsc;
 use std::collections::HashMap;
 use std::io::{ Seek, SeekFrom, Read, Write };
-use crate::debugger;
+use crate::{ debugger, prt_timer };
 
 const ROM_SIZE: usize = 0x40000; // 256 KiB
 const RAM_SIZE: usize = 0x80000; // 512 KiB
@@ -24,6 +24,10 @@ pub struct AgonMachine {
     vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>,
     last_vsync_count: u32,
     clockspeed_hz: u64,
+    prt_timers: [prt_timer::PrtTimer; 6],
+    // last_pc and mem_out_of_bounds are used by the debugger
+    pub last_pc: u32,
+    pub mem_out_of_bounds: std::cell::Cell<Option<u32>>, // address
 }
 
 // a path relative to the hostfs_root_dir
@@ -31,66 +35,114 @@ pub struct MosPath(std::path::PathBuf);
 
 impl Machine for AgonMachine {
     fn peek(&self, address: u32) -> u8 {
-        if address < 0x20000 || (address >= 0x40000 && address < 0xc0000) {
+        if self.is_address_mapped(address) {
             self.mem[address as usize]
         } else {
-            eprintln!("eZ80 memory read out of bounds: ${:x}", address);
+            self.mem_out_of_bounds.set(Some(address));
             0xf5
         }
     }
 
     fn poke(&mut self, address: u32, value: u8) {
-        if address < 0x20000 || (address >= 0x40000 && address < 0xc0000) {
+        if self.is_address_mapped(address) {
             self.mem[address as usize] = value;
         } else {
-            eprintln!("eZ80 memory write out of bounds: ${:x}", address);
+            self.mem_out_of_bounds.set(Some(address));
         }
     }
 
     fn port_in(&mut self, address: u16) -> u8 {
-        if address == 0xa2 {
-            0x0 // UART0 clear to send
-        } else if address == 0xc0 {
-            // uart0 receive
-            self.maybe_fill_rx_buf();
+        match address {
+            0x80 => self.prt_timers[0].read_ctl(),
+            0x81 => self.prt_timers[0].read_counter_low(),
+            0x82 => self.prt_timers[0].read_counter_high(),
 
-            let maybe_data = self.rx_buf;
-            self.rx_buf = None;
+            0x83 => self.prt_timers[1].read_ctl(),
+            0x84 => self.prt_timers[1].read_counter_low(),
+            0x85 => self.prt_timers[1].read_counter_high(),
 
-            match maybe_data {
-                Some(data) => data,
-                None => 0
+            0x86 => self.prt_timers[2].read_ctl(),
+            0x87 => self.prt_timers[2].read_counter_low(),
+            0x88 => self.prt_timers[2].read_counter_high(),
+
+            0x89 => self.prt_timers[3].read_ctl(),
+            0x8a => self.prt_timers[3].read_counter_low(),
+            0x8b => self.prt_timers[3].read_counter_high(),
+
+            0x8c => self.prt_timers[4].read_ctl(),
+            0x8d => self.prt_timers[4].read_counter_low(),
+            0x8e => self.prt_timers[4].read_counter_high(),
+
+            0x8f => self.prt_timers[5].read_ctl(),
+            0x90 => self.prt_timers[5].read_counter_low(),
+            0x91 => self.prt_timers[5].read_counter_high(),
+
+            // GPIO PB_DR
+            0x9a => 0x0,
+            0xa2 => {
+                0x0 // UART0 clear to send
             }
-        } else if address == 0xc5 {
-            self.maybe_fill_rx_buf();
+            0xc0 => {
+                // uart0 receive
+                self.maybe_fill_rx_buf();
 
-            match self.rx_buf {
-                Some(_) => 0x41,
-                None => 0x40
+                let maybe_data = self.rx_buf;
+                self.rx_buf = None;
+
+                match maybe_data {
+                    Some(data) => data,
+                    None => 0
+                }
             }
-            // UART_LSR_ETX		EQU 	%40 ; Transmit empty (can send)
-            // UART_LSR_RDY		EQU	%01		; Data ready (can receive)
-        } else if address == 0x9a {
-            // XXX what is this? it's busy
-            0x0
-        } else if address == 0x81 /* timer0 low byte */ {
-            std::thread::sleep(std::time::Duration::from_millis(10));
-            0x0
-        } else if address == 0x82 /* timer0 high byte */ {
-            0x0
-        } else {
-            //println!("IN({:02X})", address);
-            0
+            0xc5 => {
+                self.maybe_fill_rx_buf();
+
+                match self.rx_buf {
+                    Some(_) => 0x41,
+                    None => 0x40
+                }
+                // UART_LSR_ETX		EQU 	%40 ; Transmit empty (can send)
+                // UART_LSR_RDY		EQU	%01		; Data ready (can receive)
+            }
+            _ => {
+                //println!("IN({:02X})", address);
+                0
+            }
         }
     }
     fn port_out(&mut self, address: u16, value: u8) {
-        if address == 0xc0 /* UART0_REG_THR */ {
-            /* Send data to VDP */
-            self.tx.send(value).unwrap();
-        } else if address == 0x9a {
-            // XXX what is this? it's busy
-        } else {
-            //println!("OUT(${:02X}) = ${:x}", address, value);
+        match address {
+            0x80 => self.prt_timers[0].write_ctl(value),
+            0x81 => self.prt_timers[0].write_reload_low(value),
+            0x82 => self.prt_timers[0].write_reload_high(value),
+
+            0x83 => self.prt_timers[1].write_ctl(value),
+            0x84 => self.prt_timers[1].write_reload_low(value),
+            0x85 => self.prt_timers[1].write_reload_high(value),
+
+            0x86 => self.prt_timers[2].write_ctl(value),
+            0x87 => self.prt_timers[2].write_reload_low(value),
+            0x88 => self.prt_timers[2].write_reload_high(value),
+
+            0x89 => self.prt_timers[3].write_ctl(value),
+            0x8a => self.prt_timers[3].write_reload_low(value),
+            0x8b => self.prt_timers[3].write_reload_high(value),
+
+            0x8c => self.prt_timers[4].write_ctl(value),
+            0x8d => self.prt_timers[4].write_reload_low(value),
+            0x8e => self.prt_timers[4].write_reload_high(value),
+
+            0x8f => self.prt_timers[5].write_ctl(value),
+            0x90 => self.prt_timers[5].write_reload_low(value),
+            0x91 => self.prt_timers[5].write_reload_high(value),
+
+            // GPIO PB_DR
+            0x9a => {}
+            /* UART0_REG_THR - send data to VDP */
+            0xc0 => self.tx.send(value).unwrap(),
+            _ => {
+                //println!("OUT(${:02X}) = ${:x}", address, value);
+            }
         }
     }
 }
@@ -117,7 +169,22 @@ impl AgonMachine {
             vsync_counter: config.vsync_counter,
             last_vsync_count: 0,
             clockspeed_hz: config.clockspeed_hz,
+            prt_timers: [
+                prt_timer::PrtTimer::new(),
+                prt_timer::PrtTimer::new(),
+                prt_timer::PrtTimer::new(),
+                prt_timer::PrtTimer::new(),
+                prt_timer::PrtTimer::new(),
+                prt_timer::PrtTimer::new(),
+            ],
+            last_pc: 0,
+            mem_out_of_bounds: std::cell::Cell::new(None),
         }
+    }
+
+    #[inline]
+    fn is_address_mapped(&self, address: u32) -> bool {
+        address < 0x20000 || (address >= 0x40000 && address < 0xc0000)
     }
 
     pub fn set_sdcard_directory(&mut self, path: std::path::PathBuf) {
@@ -750,6 +817,41 @@ impl AgonMachine {
         //if _trace_for == 0 { cpu.set_trace(false); } else { _trace_for -= 1; }
 
         cpu.execute_instruction(self);
+
+        if !cpu.is_halted() {
+            // assumes instruction took 2 cycles...
+            for t in &mut self.prt_timers {
+                t.apply_ticks(2);
+            }
+        }
+    }
+
+    pub fn do_interrupts(&mut self, cpu: &mut Cpu) {
+        if !cpu.is_halted() {
+            // fire uart interrupt
+            if cpu.state.instructions_executed % 1024 == 0 && self.maybe_fill_rx_buf() != None {
+                let mut env = Environment::new(&mut cpu.state, self);
+                env.interrupt(0x18); // uart0_handler
+            }
+
+            // fire vsync interrupt
+            {
+                let cur_vsync_count = self.vsync_counter.load(std::sync::atomic::Ordering::Relaxed);
+                if cur_vsync_count != self.last_vsync_count {
+                    self.last_vsync_count = cur_vsync_count;
+                    let mut env = Environment::new(&mut cpu.state, self);
+                    env.interrupt(0x32);
+                }
+            }
+
+            if cpu.state.instructions_executed % 16 == 0 {
+                for i in 0..self.prt_timers.len() {
+                    if self.prt_timers[i].irq_due() {
+                        Environment::new(&mut cpu.state, self).interrupt(0xa + 2*(i as u32));
+                    }
+                }
+            }
+        }
     }
 
     pub fn start(&mut self, debugger_con: Option<debugger::DebuggerConnection>) {
@@ -783,24 +885,6 @@ impl AgonMachine {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
 
-            if !cpu.is_halted() {
-                // fire uart interrupt
-                if cpu.state.instructions_executed % 1024 == 0 && self.maybe_fill_rx_buf() != None {
-                    let mut env = Environment::new(&mut cpu.state, self);
-                    env.interrupt(0x18); // uart0_handler
-                }
-
-                // fire vsync interrupt
-                {
-                    let cur_vsync_count = self.vsync_counter.load(std::sync::atomic::Ordering::Relaxed);
-                    if cur_vsync_count != self.last_vsync_count {
-                        self.last_vsync_count = cur_vsync_count;
-                        let mut env = Environment::new(&mut cpu.state, self);
-                        env.interrupt(0x32);
-                    }
-                }
-            }
-            
             if cycle_account_point.elapsed() >= std::time::Duration::from_millis(10) {
                 //println!("{} inst this 10ms\n", cpu.state.instructions_executed - inst_count_end_last_10ms);
                 inst_count_end_last_10ms = cpu.state.instructions_executed;
@@ -808,6 +892,8 @@ impl AgonMachine {
             }
 
             if cpu.state.instructions_executed - inst_count_end_last_10ms < cycles_per_10ms {
+                self.last_pc = cpu.state.pc();
+                self.do_interrupts(&mut cpu);
                 self.execute_instruction(&mut cpu);
             } else {
                 std::thread::sleep(std::time::Duration::from_millis(1));

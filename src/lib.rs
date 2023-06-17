@@ -1,6 +1,7 @@
 mod agon_machine;
 mod mos;
 mod debugger;
+mod prt_timer;
 
 pub use agon_machine::AgonMachine;
 pub use agon_machine::AgonMachineConfig;

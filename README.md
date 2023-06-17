@@ -1,13 +1,13 @@
 # Agon CPU Emulator
 
-An emulator of the Agon Light CPU (eZ80) and CPU-controlled peripherals,
+An emulator of the Agon Light CPU (eZ80F92) and CPU-controlled peripherals,
 with host filesystem integration.
 
 For a complete Agon Light emulator, including the VDP (ESP32) side of the system,
 see [Agon Light Emulator](https://github.com/astralaster/agon-light-emulator),
 which uses this crate combined with a graphical (SDL) Agon VDP emulator.
 
-This Agon CPU Emulator can be used stand-alone, as a terminal-mode emulation
+This Agon CPU Emulator can be used stand-alone, as a text-only emulation
 of Agon Light:
 
 ```
@@ -15,7 +15,7 @@ cargo run --release
 ```
 
 This will pass stdin input to the Agon CPU as VDP keypress packets.
-You can use this for a scripted agon emulation:
+You can use this for a scripted Agon emulation:
 
 ```
 $ echo "credits
@@ -44,3 +44,8 @@ regression suite with:
 ```
 sh ./run_regression_test.sh
 ```
+
+## TODO
+
+- [ ] Timer clock sources other than the system clock
+- [ ] On-CPU ram needs to be supported

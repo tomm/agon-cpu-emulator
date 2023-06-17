@@ -1,3 +1,5 @@
+load regression_suite/timerirq.bin
+run
 ez80asm regression_suite/hostfs.asm
 load regression_suite/hostfs.bin
 run

@@ -1,6 +1,13 @@
 Tom's Fake VDP Version 1.03
 Agon Quark MOS Version 1.03
 
+*load regression_suite/timerirq.bin
+*run
+Timer CTL read back: 41
+Value set from timer interrupt: C0
+Timer CTL read back: 51
+IRQ counter: 05
+Value set from timer interrupt: D1
 *ez80asm regression_suite/hostfs.asm
 Pass 1...
 Pass 2...
