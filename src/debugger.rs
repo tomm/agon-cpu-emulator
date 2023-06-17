@@ -17,6 +17,7 @@ pub enum DebugCmd {
     Continue,
     Step,
     StepOver,
+    SetTrace(bool),
     Message(String),
     AddTrigger(Trigger),
     DeleteTrigger(u32),
@@ -130,6 +131,10 @@ impl DebuggerServer {
         match cmd {
             DebugCmd::Message(s) => {
                 self.con.tx.send(DebugResp::Message(s.clone())).unwrap()
+            }
+            DebugCmd::SetTrace(b) => {
+                cpu.set_trace(*b);
+                self.con.tx.send(DebugResp::Pong).unwrap();
             }
             DebugCmd::ListTriggers => {
                 self.con.tx.send(DebugResp::Triggers(self.triggers.clone())).unwrap();
