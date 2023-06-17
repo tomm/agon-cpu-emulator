@@ -827,9 +827,9 @@ impl AgonMachine {
     }
 
     pub fn do_interrupts(&mut self, cpu: &mut Cpu) {
-        if !cpu.is_halted() {
+        if cpu.state.reg.get_iff1() && !cpu.is_halted() {
             // fire uart interrupt
-            if cpu.state.instructions_executed % 1024 == 0 && self.maybe_fill_rx_buf() != None {
+            if cpu.state.instructions_executed % 64 == 0 && self.maybe_fill_rx_buf() != None {
                 let mut env = Environment::new(&mut cpu.state, self);
                 env.interrupt(0x18); // uart0_handler
             }
