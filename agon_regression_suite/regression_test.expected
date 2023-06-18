@@ -1,6 +1,10 @@
 Tom's Fake VDP Version 1.03
 Agon Quark MOS Version 1.03
 
+*ez80asm regression_suite/timerirq.asm
+Pass 1...
+Pass 2...
+Done
 *load regression_suite/timerirq.bin
 *run
 Timer CTL read back: 41
