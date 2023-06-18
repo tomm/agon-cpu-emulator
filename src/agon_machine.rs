@@ -28,6 +28,7 @@ pub struct AgonMachine {
     // last_pc and mem_out_of_bounds are used by the debugger
     pub last_pc: u32,
     pub mem_out_of_bounds: std::cell::Cell<Option<u32>>, // address
+    pub paused: bool,
 }
 
 // a path relative to the hostfs_root_dir
@@ -179,6 +180,7 @@ impl AgonMachine {
             ],
             last_pc: 0,
             mem_out_of_bounds: std::cell::Cell::new(None),
+            paused: false
         }
     }
 
@@ -782,8 +784,14 @@ impl AgonMachine {
         Environment::new(&mut cpu.state, self).subroutine_return();
     }
 
+    #[inline]
     pub fn execute_instruction(&mut self, cpu: &mut Cpu) {
         let pc = cpu.state.pc();
+        // remember PC before instruction executes. the debugger uses this
+        // when out-of-bounds memory accesses happen (since they can't be
+        // trapped mid-execution)
+        self.last_pc = pc;
+
         if self.enable_hostfs && pc < 0x40000 {
             if pc == mos::MOS_103_MAP.f_close { self.hostfs_mos_f_close(cpu); }
             if pc == mos::MOS_103_MAP.f_gets { self.hostfs_mos_f_gets(cpu); }
@@ -813,51 +821,51 @@ impl AgonMachine {
             //if pc == mos::MOS_103_MAP._f_truncate { eprintln!("Un-trapped fatfs call: f_truncate"); }
         }
 
-        //if pc == 0x40000 { _trace_for = 1000000000; cpu.set_trace(true); }
-        //if _trace_for == 0 { cpu.set_trace(false); } else { _trace_for -= 1; }
-
         cpu.execute_instruction(self);
 
-        if !cpu.is_halted() {
-            // assumes instruction took 2 cycles...
-            for t in &mut self.prt_timers {
-                t.apply_ticks(2);
-            }
+        // assumes instruction took 2 cycles...
+        for t in &mut self.prt_timers {
+            t.apply_ticks(2);
         }
     }
 
+    #[inline]
     pub fn do_interrupts(&mut self, cpu: &mut Cpu) {
-        if cpu.state.reg.get_iff1() && !cpu.is_halted() {
+        if cpu.state.instructions_executed % 64 == 0 && cpu.state.reg.get_iff1() {
             // fire uart interrupt
-            if cpu.state.instructions_executed % 64 == 0 && self.maybe_fill_rx_buf() != None {
+            if self.maybe_fill_rx_buf() != None {
                 let mut env = Environment::new(&mut cpu.state, self);
                 env.interrupt(0x18); // uart0_handler
             }
 
             // fire vsync interrupt
-            {
-                let cur_vsync_count = self.vsync_counter.load(std::sync::atomic::Ordering::Relaxed);
-                if cur_vsync_count != self.last_vsync_count {
-                    self.last_vsync_count = cur_vsync_count;
-                    let mut env = Environment::new(&mut cpu.state, self);
-                    env.interrupt(0x32);
-                }
+            let cur_vsync_count = self.vsync_counter.load(std::sync::atomic::Ordering::Relaxed);
+            if cur_vsync_count != self.last_vsync_count {
+                self.last_vsync_count = cur_vsync_count;
+                let mut env = Environment::new(&mut cpu.state, self);
+                env.interrupt(0x32);
             }
 
-            if cpu.state.instructions_executed % 16 == 0 {
-                for i in 0..self.prt_timers.len() {
-                    if self.prt_timers[i].irq_due() {
-                        Environment::new(&mut cpu.state, self).interrupt(0xa + 2*(i as u32));
-                    }
+            for i in 0..self.prt_timers.len() {
+                if self.prt_timers[i].irq_due() {
+                    Environment::new(&mut cpu.state, self).interrupt(0xa + 2*(i as u32));
                 }
             }
         }
     }
 
+    #[inline]
+    fn debugger_tick(&mut self, debugger: &mut Option<debugger::DebuggerServer>, cpu: &mut Cpu) {
+        if let Some(ref mut ds) = debugger {
+            ds.tick(self, cpu);
+        }
+    }
+
     pub fn start(&mut self, debugger_con: Option<debugger::DebuggerConnection>) {
         let mut cpu = Cpu::new_ez80();
+
         let mut debugger = if debugger_con.is_some() {
-            cpu.state.halted = true;
+            self.paused = true;
             Some(debugger::DebuggerServer::new(debugger_con.unwrap()))
         } else {
             None
@@ -867,35 +875,26 @@ impl AgonMachine {
 
         cpu.state.set_pc(0x0000);
 
-        let mut _trace_for = 0;
-        let mut inst_count_end_last_10ms = 0;
         // As the cpu emulator doesn't account for cycles, just
         // for instructions executed, we use a fudge factor (/ 2),
         // estimating 2 cycles per instruction, which is not far off
         // being right for the benchm*.bbc programs.
         let cycles_per_10ms: u64 = (self.clockspeed_hz / 100) / 2;
-        let mut cycle_account_point = std::time::Instant::now();
 
         loop {
-            if let Some(ref mut ds) = debugger {
-                ds.tick(self, &mut cpu);
-            }
-
-            if cpu.is_halted() {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-
-            if cycle_account_point.elapsed() >= std::time::Duration::from_millis(10) {
-                //println!("{} inst this 10ms\n", cpu.state.instructions_executed - inst_count_end_last_10ms);
-                inst_count_end_last_10ms = cpu.state.instructions_executed;
-                cycle_account_point += std::time::Duration::from_millis(10);
-            }
-
-            if cpu.state.instructions_executed - inst_count_end_last_10ms < cycles_per_10ms {
-                self.last_pc = cpu.state.pc();
-                self.do_interrupts(&mut cpu);
-                self.execute_instruction(&mut cpu);
+            let timeslice_start = std::time::Instant::now();
+            if self.paused {
+                // debugger still needs to process incoming commands
+                self.debugger_tick(&mut debugger, &mut cpu);
             } else {
+                // in unlimited CPU mode, this inner loop never exits
+                for _ in 0..cycles_per_10ms {
+                    self.debugger_tick(&mut debugger, &mut cpu);
+                    self.do_interrupts(&mut cpu);
+                    self.execute_instruction(&mut cpu);
+                }
+            }
+            while timeslice_start.elapsed() < std::time::Duration::from_millis(10) {
                 std::thread::sleep(std::time::Duration::from_millis(1));
             }
         }

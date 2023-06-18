@@ -162,12 +162,28 @@ fn main() {
     let vsync_counter_vdp = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
     let vsync_counter_ez80 = vsync_counter_vdp.clone();
 
+    let mut unlimited_cpu = false;
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "-u" | "--unlimited-cpu" => {
+                unlimited_cpu = true;
+            }
+            "--help" | "-h" | _ => {
+                println!("Usage: agon [OPTIONS]");
+                println!();
+                println!("Options:");
+                println!("  -u, --unlimited-cpu      Don't limit CPU to Agon Light 18.432MHz");
+                std::process::exit(0);
+            }
+        }
+    }
+
     let _cpu_thread = std::thread::spawn(move || {
         let mut machine = AgonMachine::new(AgonMachineConfig {
             to_vdp,
             from_vdp,
             vsync_counter: vsync_counter_ez80,
-            clockspeed_hz: 18_432_000
+            clockspeed_hz: if unlimited_cpu { std::u64::MAX } else { 18_432_000 },
         });
         machine.set_sdcard_directory(std::env::current_dir().unwrap().join("sdcard"));
         machine.start(None);

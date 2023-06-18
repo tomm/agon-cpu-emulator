@@ -78,7 +78,7 @@ impl DebuggerServer {
             self.send_disassembly(machine, cpu, None, machine.last_pc, machine.last_pc+1);
             self.send_state(machine, cpu);
 
-            cpu.state.halted = true;
+            machine.paused = true;
             true
         } else {
             false
@@ -93,7 +93,7 @@ impl DebuggerServer {
         self.on_out_of_bounds(machine, cpu);
 
         // check triggers
-        if !cpu.is_halted() {
+        if !machine.paused {
             let to_run: Vec<Trigger> = self
                 .triggers
                 .iter()
@@ -173,32 +173,32 @@ impl DebuggerServer {
                                 DebugCmd::GetState,
                             ]
                         });
-                        cpu.state.halted = false;
+                        machine.paused = false;
                         self.con.tx.send(DebugResp::IsPaused(false)).unwrap();
                     }
                     // other instructions. just step
                     _ => {
-                        cpu.state.halted = false;
+                        machine.paused = false;
                         machine.execute_instruction(cpu);
-                        cpu.state.halted = true;
+                        machine.paused = true;
                         self.send_state(machine, cpu);
                     }
                 }
 
             }
             DebugCmd::Step => {
-                cpu.state.halted = false;
+                machine.paused = false;
                 machine.execute_instruction(cpu);
-                cpu.state.halted = true;
+                machine.paused = true;
                 self.send_state(machine, cpu);
             }
             DebugCmd::Pause => {
-                cpu.state.halted = true;
+                machine.paused = true;
                 self.con.tx.send(DebugResp::IsPaused(true)).unwrap();
             }
             DebugCmd::Continue => {
                 machine.mem_out_of_bounds.set(None);
-                cpu.state.halted = false;
+                machine.paused = false;
                 // force one instruction to be executed, just to
                 // get over any breakpoint on the current PC
                 machine.execute_instruction(cpu);
