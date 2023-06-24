@@ -10,6 +10,10 @@ pub struct DebuggerConnection {
     pub rx: Receiver<DebugCmd>
 }
 
+pub type Registers = ez80::Registers;
+pub type Reg8 = ez80::Reg8;
+pub type Reg16 = ez80::Reg16;
+
 #[derive(Debug, Clone)]
 pub enum DebugCmd {
     Ping,
@@ -34,9 +38,9 @@ pub enum DebugResp {
     IsPaused(bool),
     Pong,
     Message(String),
-    Registers(ez80::Registers),
+    Registers(Registers),
     State {
-        registers: ez80::Registers,
+        registers: Registers,
         instructions_executed: u64,
         stack: [u8; 16],
         pc_instruction: String,

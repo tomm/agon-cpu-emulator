@@ -5,7 +5,7 @@ rm -f agon_regression_suite/regression_test.out \
    sdcard/regression_suite/animal2.bbc \
    sdcard/regression_suite/helloworld.bin \
    sdcard/regression_suite/helloworld16.bin
-cargo run --release < agon_regression_suite/regression_test_script.txt | tee agon_regression_suite/regression_test.out
+cargo run --release -- --unlimited-cpu < agon_regression_suite/regression_test_script.txt | tee agon_regression_suite/regression_test.out
 echo
 
 if cmp agon_regression_suite/regression_test.out agon_regression_suite/regression_test.expected; then

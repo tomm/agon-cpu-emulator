@@ -2,6 +2,7 @@ Tom's Fake VDP Version 1.03
 Agon Quark MOS Version 1.03
 
 *ez80asm regression_suite/timerirq.asm
+Assembling regression_suite/timerirq.asm
 Pass 1...
 Pass 2...
 Done
@@ -13,6 +14,7 @@ Timer CTL read back: 51
 IRQ counter: 05
 Value set from timer interrupt: D1
 *ez80asm regression_suite/hostfs.asm
+Assembling regression_suite/hostfs.asm
 Pass 1...
 Pass 2...
 Done
@@ -24,10 +26,12 @@ sample.txt
 hostfs test passed
 *cd regression_suite
 *ez80asm helloworld.asm
+Assembling helloworld.asm
 Pass 1...
 Pass 2...
 Done
 *ez80asm helloworld16.asm
+Assembling helloworld16.asm
 Pass 1...
 Pass 2...
 Done

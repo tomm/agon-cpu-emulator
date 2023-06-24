@@ -29,13 +29,20 @@ pub struct AgonMachine {
     pub last_pc: u32,
     pub mem_out_of_bounds: std::cell::Cell<Option<u32>>, // address
     pub paused: bool,
+    pub cycle_counter: std::cell::Cell<u32>
 }
 
 // a path relative to the hostfs_root_dir
 pub struct MosPath(std::path::PathBuf);
 
 impl Machine for AgonMachine {
+    #[inline]
+    fn use_cycles(&self, cycles: u32) {
+        self.cycle_counter.set(self.cycle_counter.get() + cycles);
+    }
+
     fn peek(&self, address: u32) -> u8 {
+        self.use_cycles(if address < 0x40000 { 2 } else { 1 });
         if self.is_address_mapped(address) {
             self.mem[address as usize]
         } else {
@@ -45,6 +52,7 @@ impl Machine for AgonMachine {
     }
 
     fn poke(&mut self, address: u32, value: u8) {
+        self.use_cycles(1);
         if self.is_address_mapped(address) {
             self.mem[address as usize] = value;
         } else {
@@ -53,6 +61,7 @@ impl Machine for AgonMachine {
     }
 
     fn port_in(&mut self, address: u16) -> u8 {
+        self.use_cycles(1);
         match address {
             0x80 => self.prt_timers[0].read_ctl(),
             0x81 => self.prt_timers[0].read_counter_low(),
@@ -112,6 +121,7 @@ impl Machine for AgonMachine {
         }
     }
     fn port_out(&mut self, address: u16, value: u8) {
+        self.use_cycles(1);
         match address {
             0x80 => self.prt_timers[0].write_ctl(value),
             0x81 => self.prt_timers[0].write_reload_low(value),
@@ -180,6 +190,7 @@ impl AgonMachine {
             ],
             last_pc: 0,
             mem_out_of_bounds: std::cell::Cell::new(None),
+            cycle_counter: std::cell::Cell::new(0),
             paused: false
         }
     }
@@ -785,7 +796,8 @@ impl AgonMachine {
     }
 
     #[inline]
-    pub fn execute_instruction(&mut self, cpu: &mut Cpu) {
+    // returns cycles elapsed
+    pub fn execute_instruction(&mut self, cpu: &mut Cpu) -> u32 {
         let pc = cpu.state.pc();
         // remember PC before instruction executes. the debugger uses this
         // when out-of-bounds memory accesses happen (since they can't be
@@ -821,12 +833,17 @@ impl AgonMachine {
             //if pc == mos::MOS_103_MAP._f_truncate { eprintln!("Un-trapped fatfs call: f_truncate"); }
         }
 
+        self.cycle_counter.set(0);
         cpu.execute_instruction(self);
+        let cycles_elapsed = self.cycle_counter.get();
+        //println!("{:2} cycles, {:?}", cycles_elapsed, ez80::disassembler::disassemble(self, cpu, None, pc, pc+1));
 
         // assumes instruction took 2 cycles...
         for t in &mut self.prt_timers {
-            t.apply_ticks(2);
+            t.apply_ticks(cycles_elapsed as u16);
         }
+
+        cycles_elapsed
     }
 
     #[inline]
@@ -873,30 +890,26 @@ impl AgonMachine {
 
         self.load_mos();
 
-        cpu.state.set_pc(0x0000);
+        cpu.state.set_pc(0);
 
-        // As the cpu emulator doesn't account for cycles, just
-        // for instructions executed, we use a fudge factor (/ 2),
-        // estimating 2 cycles per instruction, which is not far off
-        // being right for the benchm*.bbc programs.
-        let cycles_per_10ms: u64 = (self.clockspeed_hz / 100) / 2;
-
+        let cycles_per_ms: u64 = self.clockspeed_hz / 1000;
+        let mut timeslice_start = std::time::Instant::now();
         loop {
-            let timeslice_start = std::time::Instant::now();
-            if self.paused {
-                // debugger still needs to process incoming commands
+            // in unlimited CPU mode, this inner loop never exits
+            let mut cycle: u64 = 0;
+            while cycle < cycles_per_ms {
                 self.debugger_tick(&mut debugger, &mut cpu);
-            } else {
-                // in unlimited CPU mode, this inner loop never exits
-                for _ in 0..cycles_per_10ms {
-                    self.debugger_tick(&mut debugger, &mut cpu);
-                    self.do_interrupts(&mut cpu);
-                    self.execute_instruction(&mut cpu);
-                }
+                if self.paused { break; }
+                self.do_interrupts(&mut cpu);
+                cycle += self.execute_instruction(&mut cpu) as u64;
             }
-            while timeslice_start.elapsed() < std::time::Duration::from_millis(10) {
-                std::thread::sleep(std::time::Duration::from_millis(1));
+
+            while timeslice_start.elapsed() < std::time::Duration::from_millis(1) {
+                std::thread::sleep(std::time::Duration::from_micros(500));
             }
+            timeslice_start = timeslice_start.checked_add(
+                std::time::Duration::from_millis(1)
+            ).unwrap_or(std::time::Instant::now());
         }
     }
 }

@@ -96,9 +96,6 @@ fn handle_vdp(tx_to_ez80: &Sender<u8>, rx_from_ez80: &Receiver<u8>, vdp_terminal
 fn start_vdp(tx_vdp_to_ez80: Sender<u8>, rx_ez80_to_vdp: Receiver<u8>,
              vsync_counter_vdp: std::sync::Arc<std::sync::atomic::AtomicU32>) {
     let (tx_stdin, rx_stdin): (Sender<String>, Receiver<String>) = mpsc::channel();
-    let mut start_time = Some(std::time::SystemTime::now());
-    let mut last_vsync = std::time::SystemTime::now();
-    let mut vdp_terminal_mode = false;
 
     // to avoid blocking on stdin, use a thread and channel to read from it
     let _stdin_thread = std::thread::spawn(move || {
@@ -110,47 +107,44 @@ fn start_vdp(tx_vdp_to_ez80: Sender<u8>, rx_ez80_to_vdp: Receiver<u8>,
 
     println!("Tom\'s Fake VDP Version 1.03");
 
+    let mut vdp_terminal_mode = false;
+    let mut last_kb_input = std::time::Instant::now();
+    let mut last_vsync = std::time::Instant::now();
     loop {
         if !handle_vdp(&tx_vdp_to_ez80, &rx_ez80_to_vdp, &mut vdp_terminal_mode) {
             // no packets from ez80. sleep a little
-            std::thread::sleep(std::time::Duration::from_millis(10));
+            std::thread::sleep(std::time::Duration::from_millis(1));
         }
 
-        let now = std::time::SystemTime::now();
-
         // a fake vsync every 16ms
-        if now.duration_since(last_vsync).unwrap() >=
-            std::time::Duration::from_millis(16) {
+        if last_vsync.elapsed() >= std::time::Duration::from_micros(16666) {
             // notify ez80 by incrementing a shared atomic integer
             vsync_counter_vdp.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            last_vsync = now;
+            last_vsync = last_vsync.checked_add(std::time::Duration::from_micros(16666)).unwrap_or(std::time::Instant::now());
         }
 
         // emit stdin input as keyboard events to the ez80, line by line,
         // with 1 second waits between lines
-        if let Some(t) = start_time {
-            let elapsed = now.duration_since(t).unwrap();
-            if elapsed > std::time::Duration::from_secs(1) {
-                match rx_stdin.try_recv() {
-                    Ok(line) => {
-                        if vdp_terminal_mode {
-                            for ch in line.as_bytes() {
-                                tx_vdp_to_ez80.send(*ch).unwrap();
-                                std::thread::sleep(std::time::Duration::from_micros(100));
-                            }
-                            tx_vdp_to_ez80.send(10).unwrap();
-                        } else {
-                            send_keys(&tx_vdp_to_ez80, &line);
-                            send_keys(&tx_vdp_to_ez80, "\r");
+        if last_kb_input.elapsed() > std::time::Duration::from_secs(1) {
+            match rx_stdin.try_recv() {
+                Ok(line) => {
+                    if vdp_terminal_mode {
+                        for ch in line.as_bytes() {
+                            tx_vdp_to_ez80.send(*ch).unwrap();
+                            std::thread::sleep(std::time::Duration::from_micros(100));
                         }
-                        start_time = Some(std::time::SystemTime::now());
+                        tx_vdp_to_ez80.send(10).unwrap();
+                    } else {
+                        send_keys(&tx_vdp_to_ez80, &line);
+                        send_keys(&tx_vdp_to_ez80, "\r");
                     }
-                    Err(mpsc::TryRecvError::Disconnected) => {
-                        // when stdin reaches EOF, terminate the emulator
-                        std::process::exit(0);
-                    },
-                    Err(mpsc::TryRecvError::Empty) => {}
+                    last_kb_input = std::time::Instant::now();
                 }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    // when stdin reaches EOF, terminate the emulator
+                    std::process::exit(0);
+                },
+                Err(mpsc::TryRecvError::Empty) => {}
             }
         }
     }
