@@ -42,45 +42,57 @@ Hello world ADL!
 *load regression_suite/helloworld16.bin
 *run
 Hello world Z80!
-*disassemble &7c10 100
-007C10 DD E5             ..     PUSH IX
-007C12 DD 21 00 00 00    .!...  LD IX,&000000
-007C17 DD 39             .9     ADD IX,SP
-007C19 ED 22 C9          .".    LEA HL,IX-55
-007C1C F9                .      LD SP,HL
-007C1D DD 07 09          ...    LD BC,(IX+9)
-007C20 DD 0F EC          ...    LD (IX-20),BC
-007C23 DD 27 0F          .'.    LD IX,(IX+15)
-007C26 01 00 00 00       ....   LD BC,&000000
-007C2A ED 0F             ..     LD (HL),BC
-007C2C ED 65 FD          .e.    PEA IX-3
-007C2F DD 31 06 ED 66    .1..f  LD SP,&66ED06
-007C34 00                .      NOP
-007C35 CD 65 72 00       .er.   CALL &007265
-007C39 C1                .      POP BC
-007C3A C1                .      POP BC
-007C3B DD 2F E6          ./.    LD (IX-26),IX
-007C3E 01 00 00 00       ....   LD BC,&000000
-007C42 DD 27 E6          .'.    LD IX,(IX-26)
-007C45 B7                .      OR A,A
-007C46 ED 42             .B     SBC HL,BC
-007C48 20 15              .     JR NZ,&007C5F
-007C4A DD 31 06 FD 7E    .1..~  LD SP,&7EFD06
-007C4F 10 B7             ..     DJNZ &007C08
-007C51 ED 62             .b     SBC HL,HL
-007C53 6F                o      LD L,A
-007C54 DD 2F E6          ./.    LD (IX-26),IX
-007C57 DD 27 E6          .'.    LD IX,(IX-26)
-007C5A B7                .      OR A,A
-007C5B ED 42             .B     SBC HL,BC
-007C5D 28 07             (.     JR Z,&007C66
-007C5F DD 27 E6          .'.    LD IX,(IX-26)
-007C62 C3 10 81 00       ....   JP &008110
-007C66 DD 31 06 FD 7E    .1..~  LD SP,&7EFD06
-007C6B 0F                .      RRCA
-007C6C E6 02             ..     AND A,&02
-007C6E 20 08              .     JR NZ,&007C78
-007C70 21 07 00 00       !...   LD HL,&000007
+*disassemble &b0050 100
+0B0050 0B                .      DEC BC
+0B0051 E1                .      POP HL
+0B0052 DD 21 04 34 0B    .!.4.  LD IX,&0B3404
+0B0057 DD E5             ..     PUSH IX
+0B0059 CD 8D 00 0B       ....   CALL &0B008D
+0B005D 06 00             ..     LD B,&00
+0B005F C5                .      PUSH BC
+0B0060 CD F9 00 0B       ....   CALL &0B00F9
+0B0064 D1                .      POP DE
+0B0065 D1                .      POP DE
+0B0066 FD E1             ..     POP IY
+0B0068 DD E1             ..     POP IX
+0B006A D1                .      POP DE
+0B006B C1                .      POP BC
+0B006C F1                .      POP AF
+0B006D C9                .      RET
+0B006E 01 2D 00 00       .-..   LD BC,&00002D
+0B0072 3E 00             >.     LD A,&00
+0B0074 B1                .      OR A,C
+0B0075 B0                .      OR A,B
+0B0076 C8                .      RET Z
+0B0077 AF                .      XOR A,A
+0B0078 32 FB 3A 0B       2.:.   LD (&0B3AFB),A
+0B007C ED 62             .b     SBC HL,HL
+0B007E 0B                .      DEC BC
+0B007F ED 42             .B     SBC HL,BC
+0B0081 C8                .      RET Z
+0B0082 21 FB 3A 0B       !.:.   LD HL,&0B3AFB
+0B0086 11 FC 3A 0B       ..:.   LD DE,&0B3AFC
+0B008A ED B0             ..     LDIR
+0B008C C9                .      RET
+0B008D 01 04 00 0B       ....   LD BC,&0B0004
+0B0091 DD 0F 00          ...    LD (IX+0),BC
+0B0094 DD 23             .#     INC IX
+0B0096 DD 23             .#     INC IX
+0B0098 DD 23             .#     INC IX
+0B009A CD D5 00 0B       ....   CALL &0B00D5
+0B009E 01 01 00 00       ....   LD BC,&000001
+0B00A2 06 0F             ..     LD B,&0F
+0B00A4 C5                .      PUSH BC
+0B00A5 E5                .      PUSH HL
+0B00A6 CD C6 00 0B       ....   CALL &0B00C6
+0B00AA 79                y      LD A,C
+0B00AB D1                .      POP DE
+0B00AC C1                .      POP BC
+0B00AD B7                .      OR A,A
+0B00AE C8                .      RET Z
+0B00AF DD 1F 00          ...    LD (IX+0),DE
+0B00B2 E5                .      PUSH HL
+0B00B3 D1                .      POP DE
 *cd regression_suite
 *load ../bbcbasic.bin
 *run

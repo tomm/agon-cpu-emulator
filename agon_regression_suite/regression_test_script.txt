@@ -12,7 +12,7 @@ load regression_suite/helloworld.bin
 run
 load regression_suite/helloworld16.bin
 run
-disassemble &7c10 100
+disassemble &b0050 100
 cd regression_suite
 load ../bbcbasic.bin
 run

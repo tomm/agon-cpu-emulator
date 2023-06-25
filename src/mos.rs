@@ -18,6 +18,7 @@ pub const FA_WRITE: u32 = 2;
 pub const FA_CREATE_NEW: u32 = 4;
 pub const FA_CREATE_ALWAYS: u32 = 8;
 
+#[derive(Clone, Default)]
 pub struct MosMap {
     pub f_chdir: u32,
     pub _f_chdrive: u32,
@@ -44,6 +45,41 @@ pub struct MosMap {
     pub _f_truncate: u32,
     pub f_unlink: u32,
     pub f_write: u32,
+}
+
+impl MosMap {
+    pub fn from_symbol_map(map: std::collections::HashMap<String, u32>) -> Result<MosMap, &'static str> {
+        let mut mos_map = MosMap::default();
+        let err = "Missing MOS FS symbol in symbol map";
+
+        mos_map.f_chdir = *(map.get("_f_chdir").ok_or(err)?);
+        mos_map._f_chdrive = *(map.get("_f_chdrive").ok_or(err)?);
+        mos_map.f_close = *(map.get("_f_close").ok_or(err)?);
+        mos_map.f_closedir = *(map.get("_f_closedir").ok_or(err)?);
+        mos_map._f_getcwd = *(map.get("_f_getcwd").ok_or(err)?);
+        mos_map._f_getfree = *(map.get("_f_getfree").ok_or(err)?);
+        mos_map.f_getlabel = *(map.get("_f_getlabel").ok_or(err)?);
+        mos_map.f_gets = *(map.get("_f_gets").ok_or(err)?);
+        mos_map.f_lseek = *(map.get("_f_lseek").ok_or(err)?);
+        mos_map.f_mkdir = *(map.get("_f_mkdir").ok_or(err)?);
+        mos_map.f_mount = *(map.get("_f_mount").ok_or(err)?);
+        mos_map.f_open = *(map.get("_f_open").ok_or(err)?);
+        mos_map.f_opendir = *(map.get("_f_opendir").ok_or(err)?);
+        mos_map._f_printf = *(map.get("_f_printf").ok_or(err)?);
+        mos_map.f_putc = *(map.get("_f_putc").ok_or(err)?);
+        mos_map._f_puts = *(map.get("_f_puts").ok_or(err)?);
+        mos_map.f_read = *(map.get("_f_read").ok_or(err)?);
+        mos_map.f_readdir = *(map.get("_f_readdir").ok_or(err)?);
+        mos_map.f_rename = *(map.get("_f_rename").ok_or(err)?);
+        mos_map._f_setlabel = *(map.get("_f_setlabel").ok_or(err)?);
+        mos_map.f_stat = *(map.get("_f_stat").ok_or(err)?);
+        mos_map._f_sync = *(map.get("_f_sync").ok_or(err)?);
+        mos_map._f_truncate = *(map.get("_f_truncate").ok_or(err)?);
+        mos_map.f_unlink = *(map.get("_f_unlink").ok_or(err)?);
+        mos_map.f_write = *(map.get("_f_write").ok_or(err)?);
+
+        Ok(mos_map)
+    }
 }
 
 pub static MOS_103_MAP: MosMap = MosMap {

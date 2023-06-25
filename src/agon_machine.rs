@@ -19,6 +19,7 @@ pub struct AgonMachine {
     open_files: HashMap<u32, std::fs::File>,
     open_dirs: HashMap<u32, std::fs::ReadDir>,
     enable_hostfs: bool,
+    mos_map: mos::MosMap,
     hostfs_root_dir: std::path::PathBuf,
     mos_current_dir: MosPath,
     vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>,
@@ -175,6 +176,7 @@ impl AgonMachine {
             open_files: HashMap::new(),
             open_dirs: HashMap::new(),
             enable_hostfs: true,
+            mos_map: mos::MosMap::default(),
             hostfs_root_dir: std::env::current_dir().unwrap(),
             mos_current_dir: MosPath(std::path::PathBuf::new()),
             vsync_counter: config.vsync_counter,
@@ -228,11 +230,30 @@ impl AgonMachine {
             self.mem[i] = *e;
         }
 
-        // checksum the loaded MOS, to identify supported versions
-        let checksum = z80_mem_tools::checksum(self, 0, code.len() as u32);
-        if checksum != 0xc102d8 {
-            eprintln!("WARNING: Unsupported MOS version (only 1.03 is supported): disabling hostfs");
-            self.enable_hostfs = false;
+        match crate::symbol_map::read_zds_map_file("MOS.map") {
+            Ok(map) => {
+                match mos::MosMap::from_symbol_map(map) {
+                    Ok(mos_map) => {
+                        self.mos_map = mos_map;
+                    }
+                    Err(e) => {
+                        println!("Error reading MOS.map, hostfs disabled: {}", e);
+                        self.enable_hostfs = false;
+                    }
+                }
+            }
+            Err(e) => {
+                println!("{}", e);
+                println!("Failed to load MOS.map. Falling back on inbuilt MOS mappings...");
+                // checksum the loaded MOS, to identify supported versions
+                let checksum = z80_mem_tools::checksum(self, 0, code.len() as u32);
+                if checksum != 0xc102d8 {
+                    eprintln!("WARNING: Unsupported MOS version (only 1.03 is supported): disabling hostfs");
+                    self.enable_hostfs = false;
+                } else {
+                    self.mos_map = mos::MOS_103_MAP.clone();
+                }
+            }
         }
     }
 
@@ -805,32 +826,32 @@ impl AgonMachine {
         self.last_pc = pc;
 
         if self.enable_hostfs && pc < 0x40000 {
-            if pc == mos::MOS_103_MAP.f_close { self.hostfs_mos_f_close(cpu); }
-            if pc == mos::MOS_103_MAP.f_gets { self.hostfs_mos_f_gets(cpu); }
-            if pc == mos::MOS_103_MAP.f_read { self.hostfs_mos_f_read(cpu); }
-            if pc == mos::MOS_103_MAP.f_open { self.hostfs_mos_f_open(cpu); }
-            if pc == mos::MOS_103_MAP.f_write { self.hostfs_mos_f_write(cpu); }
-            if pc == mos::MOS_103_MAP.f_chdir { self.hostfs_mos_f_chdir(cpu); }
-            if pc == mos::MOS_103_MAP.f_closedir { self.hostfs_mos_f_closedir(cpu); }
-            if pc == mos::MOS_103_MAP.f_getlabel { self.hostfs_mos_f_getlabel(cpu); }
-            if pc == mos::MOS_103_MAP.f_lseek { self.hostfs_mos_f_lseek(cpu); }
-            if pc == mos::MOS_103_MAP.f_mkdir { self.hostfs_mos_f_mkdir(cpu); }
-            if pc == mos::MOS_103_MAP.f_mount { self.hostfs_mos_f_mount(cpu); }
-            if pc == mos::MOS_103_MAP.f_opendir { self.hostfs_mos_f_opendir(cpu); }
-            if pc == mos::MOS_103_MAP.f_putc { self.hostfs_mos_f_putc(cpu); }
-            if pc == mos::MOS_103_MAP.f_readdir { self.hostfs_mos_f_readdir(cpu); }
-            if pc == mos::MOS_103_MAP.f_rename { self.hostfs_mos_f_rename(cpu); }
-            if pc == mos::MOS_103_MAP.f_stat { self.hostfs_mos_f_stat(cpu); }
-            if pc == mos::MOS_103_MAP.f_unlink { self.hostfs_mos_f_unlink(cpu); }
+            if pc == self.mos_map.f_close { self.hostfs_mos_f_close(cpu); }
+            if pc == self.mos_map.f_gets { self.hostfs_mos_f_gets(cpu); }
+            if pc == self.mos_map.f_read { self.hostfs_mos_f_read(cpu); }
+            if pc == self.mos_map.f_open { self.hostfs_mos_f_open(cpu); }
+            if pc == self.mos_map.f_write { self.hostfs_mos_f_write(cpu); }
+            if pc == self.mos_map.f_chdir { self.hostfs_mos_f_chdir(cpu); }
+            if pc == self.mos_map.f_closedir { self.hostfs_mos_f_closedir(cpu); }
+            if pc == self.mos_map.f_getlabel { self.hostfs_mos_f_getlabel(cpu); }
+            if pc == self.mos_map.f_lseek { self.hostfs_mos_f_lseek(cpu); }
+            if pc == self.mos_map.f_mkdir { self.hostfs_mos_f_mkdir(cpu); }
+            if pc == self.mos_map.f_mount { self.hostfs_mos_f_mount(cpu); }
+            if pc == self.mos_map.f_opendir { self.hostfs_mos_f_opendir(cpu); }
+            if pc == self.mos_map.f_putc { self.hostfs_mos_f_putc(cpu); }
+            if pc == self.mos_map.f_readdir { self.hostfs_mos_f_readdir(cpu); }
+            if pc == self.mos_map.f_rename { self.hostfs_mos_f_rename(cpu); }
+            if pc == self.mos_map.f_stat { self.hostfs_mos_f_stat(cpu); }
+            if pc == self.mos_map.f_unlink { self.hostfs_mos_f_unlink(cpu); }
             // never referenced in MOS
-            //if pc == mos::MOS_103_MAP._f_puts { eprintln!("Un-trapped fatfs call: f_puts"); }
-            //if pc == mos::MOS_103_MAP._f_setlabel { eprintln!("Un-trapped fatfs call: f_setlabel"); }
-            //if pc == mos::MOS_103_MAP._f_chdrive { eprintln!("Un-trapped fatfs call: f_chdrive"); }
-            //if pc == mos::MOS_103_MAP._f_getcwd { eprintln!("Un-trapped fatfs call: f_getcwd"); }
-            //if pc == mos::MOS_103_MAP._f_getfree { eprintln!("Un-trapped fatfs call: f_getfree"); }
-            //if pc == mos::MOS_103_MAP._f_printf { eprintln!("Un-trapped fatfs call: f_printf"); }
-            //if pc == mos::MOS_103_MAP._f_sync { eprintln!("Un-trapped fatfs call: f_sync"); }
-            //if pc == mos::MOS_103_MAP._f_truncate { eprintln!("Un-trapped fatfs call: f_truncate"); }
+            //if pc == self.mos_map._f_puts { eprintln!("Un-trapped fatfs call: f_puts"); }
+            //if pc == self.mos_map._f_setlabel { eprintln!("Un-trapped fatfs call: f_setlabel"); }
+            //if pc == self.mos_map._f_chdrive { eprintln!("Un-trapped fatfs call: f_chdrive"); }
+            //if pc == self.mos_map._f_getcwd { eprintln!("Un-trapped fatfs call: f_getcwd"); }
+            //if pc == self.mos_map._f_getfree { eprintln!("Un-trapped fatfs call: f_getfree"); }
+            //if pc == self.mos_map._f_printf { eprintln!("Un-trapped fatfs call: f_printf"); }
+            //if pc == self.mos_map._f_sync { eprintln!("Un-trapped fatfs call: f_sync"); }
+            //if pc == self.mos_map._f_truncate { eprintln!("Un-trapped fatfs call: f_truncate"); }
         }
 
         self.cycle_counter.set(0);
