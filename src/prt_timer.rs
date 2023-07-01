@@ -79,7 +79,7 @@ impl PrtTimer {
             self.ctl &= !RST_EN;
         }
         let clk_div = self.clk_div();
-        self.step_ += clock_ticks;
+        self.step_ = self.step_.wrapping_add(clock_ticks);
         if self.step_ >= clk_div {
             self.step_ -= clk_div;
             if self.counter == 0 {
