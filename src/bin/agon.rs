@@ -1,4 +1,4 @@
-use agon_cpu_emulator::{ AgonMachine, AgonMachineConfig };
+use agon_cpu_emulator::{ RamInit, AgonMachine, AgonMachineConfig };
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
 use std::io::{ self, BufRead, Write };
@@ -174,6 +174,7 @@ fn main() {
 
     let _cpu_thread = std::thread::spawn(move || {
         let mut machine = AgonMachine::new(AgonMachineConfig {
+            ram_init: RamInit::Random,
             to_vdp,
             from_vdp,
             vsync_counter: vsync_counter_ez80,

@@ -14,3 +14,4 @@ repository = "https://github.com/tomm/agon-cpu-emulator"
 [dependencies]
 ez80 = { git = "https://github.com/tomm/ez80.git", rev="94649b67e98e1a8dff1a742d04c7eb7cff8ab538"}
 #ez80 = { path = "../ez80" }
+rand = "*"

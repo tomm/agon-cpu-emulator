@@ -5,10 +5,16 @@ use std::sync::mpsc;
 use std::collections::HashMap;
 use std::io::{ Seek, SeekFrom, Read, Write };
 use crate::{ debugger, prt_timer };
+use rand::Rng;
 
 const ROM_SIZE: usize = 0x40000; // 256 KiB
 const RAM_SIZE: usize = 0x80000; // 512 KiB
 const MEM_SIZE: usize = ROM_SIZE + RAM_SIZE;
+
+pub enum RamInit {
+    Zero,
+    Random
+}
 
 pub struct AgonMachine {
     mem: [u8; MEM_SIZE],
@@ -26,6 +32,7 @@ pub struct AgonMachine {
     last_vsync_count: u32,
     clockspeed_hz: u64,
     prt_timers: [prt_timer::PrtTimer; 6],
+    ram_init: RamInit,
     // last_pc and mem_out_of_bounds are used by the debugger
     pub last_pc: u32,
     pub mem_out_of_bounds: std::cell::Cell<Option<u32>>, // address
@@ -164,6 +171,7 @@ pub struct AgonMachineConfig {
     pub from_vdp: Receiver<u8>,
     pub vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>,
     pub clockspeed_hz: u64,
+    pub ram_init: RamInit,
 }
 
 impl AgonMachine {
@@ -190,6 +198,7 @@ impl AgonMachine {
                 prt_timer::PrtTimer::new(),
                 prt_timer::PrtTimer::new(),
             ],
+            ram_init: config.ram_init,
             last_pc: 0,
             mem_out_of_bounds: std::cell::Cell::new(None),
             cycle_counter: std::cell::Cell::new(0),
@@ -908,6 +917,15 @@ impl AgonMachine {
         } else {
             None
         };
+
+        match self.ram_init {
+            RamInit::Random => {
+                for i in 0x40000..0xc0000 {
+                    self.poke(i, rand::thread_rng().gen_range(0..255));
+                }
+            }
+            RamInit::Zero => {}
+        }
 
         self.load_mos();
 
