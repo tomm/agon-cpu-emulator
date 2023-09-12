@@ -179,6 +179,7 @@ fn main() {
             from_vdp,
             vsync_counter: vsync_counter_ez80,
             clockspeed_hz: if unlimited_cpu { std::u64::MAX } else { 18_432_000 },
+            mos_bin: std::path::PathBuf::from("MOS.bin"),
         });
         machine.set_sdcard_directory(std::env::current_dir().unwrap().join("sdcard"));
         machine.start(None);

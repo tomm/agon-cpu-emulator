@@ -33,6 +33,7 @@ pub struct AgonMachine {
     clockspeed_hz: u64,
     prt_timers: [prt_timer::PrtTimer; 6],
     ram_init: RamInit,
+    mos_bin: std::path::PathBuf,
     // last_pc and mem_out_of_bounds are used by the debugger
     pub last_pc: u32,
     pub mem_out_of_bounds: std::cell::Cell<Option<u32>>, // address
@@ -172,6 +173,7 @@ pub struct AgonMachineConfig {
     pub vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>,
     pub clockspeed_hz: u64,
     pub ram_init: RamInit,
+    pub mos_bin: std::path::PathBuf,
 }
 
 impl AgonMachine {
@@ -202,7 +204,8 @@ impl AgonMachine {
             last_pc: 0,
             mem_out_of_bounds: std::cell::Cell::new(None),
             cycle_counter: std::cell::Cell::new(0),
-            paused: false
+            paused: false,
+            mos_bin: config.mos_bin,
         }
     }
 
@@ -227,10 +230,10 @@ impl AgonMachine {
     }
 
     fn load_mos(&mut self) {
-        let code = match std::fs::read("MOS.bin") {
+        let code = match std::fs::read(&self.mos_bin) {
             Ok(data) => data,
             Err(e) => {
-                eprintln!("Error opening MOS.bin: {:?}", e);
+                eprintln!("Error opening {}: {:?}", self.mos_bin.display(), e);
                 std::process::exit(-1);
             }
         };
@@ -239,21 +242,23 @@ impl AgonMachine {
             self.mem[i] = *e;
         }
 
-        match crate::symbol_map::read_zds_map_file("MOS.map") {
+        let mos_map = self.mos_bin.with_extension("map");
+
+        match crate::symbol_map::read_zds_map_file(mos_map.to_str().unwrap()) {
             Ok(map) => {
                 match mos::MosMap::from_symbol_map(map) {
                     Ok(mos_map) => {
                         self.mos_map = mos_map;
                     }
                     Err(e) => {
-                        println!("Error reading MOS.map, hostfs disabled: {}", e);
+                        println!("Error reading {}, hostfs disabled: {}", mos_map.display(), e);
                         self.enable_hostfs = false;
                     }
                 }
             }
             Err(e) => {
                 println!("{}", e);
-                println!("Failed to load MOS.map. Falling back on inbuilt MOS mappings...");
+                println!("Failed to load {}. Falling back on inbuilt MOS mappings...", mos_map.display());
                 // checksum the loaded MOS, to identify supported versions
                 let checksum = z80_mem_tools::checksum(self, 0, code.len() as u32);
                 if checksum != 0xc102d8 {
