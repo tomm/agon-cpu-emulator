@@ -1,5 +1,9 @@
 use ez80::Machine;
 
+// MOS error codes (enum FRESULT)
+pub const FR_OK: u32 = 0;
+pub const FR_DISK_ERR: u32 = 1;
+
 // FatFS struct FIL
 pub const SIZEOF_MOS_FIL_STRUCT: u32 = 36;
 pub const FIL_MEMBER_OBJSIZE: u32 = 11;
@@ -81,34 +85,6 @@ impl MosMap {
         Ok(mos_map)
     }
 }
-
-pub static MOS_103_MAP: MosMap = MosMap {
-    f_chdir    : 0x82B2,
-    _f_chdrive : 0x827A,
-    f_close    : 0x822B,
-    f_closedir : 0x8B5B,
-    _f_getcwd  : 0x8371,
-    _f_getfree : 0x8CE8,
-    f_getlabel : 0x9816,
-    f_gets     : 0x9C91,
-    f_lseek    : 0x8610,
-    f_mkdir    : 0x92F6,
-    f_mount    : 0x72F7,
-    f_open     : 0x738C,
-    f_opendir  : 0x8A52,
-    _f_printf  : 0x9F11,
-    f_putc     : 0x9E8E,
-    _f_puts    : 0x9EC4,
-    f_read     : 0x785E,
-    f_readdir  : 0x8B92,
-    f_rename   : 0x9561,
-    _f_setlabel: 0x99DB,
-    f_stat     : 0x8C55,
-    _f_sync    : 0x8115,
-    _f_truncate: 0x8F78,
-    f_unlink   : 0x911A,
-    f_write    : 0x7C10,
-};
 
 /**
  * Like z80_mem_tools::get_cstring, except \r and \n are accepted as

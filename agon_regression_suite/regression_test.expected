@@ -1,6 +1,9 @@
 Tom's Fake VDP Version 1.03
 Agon Quark MOS Version 1.03
 
+*load mos
+
+Error accessing SD card
 *ez80asm regression_suite/timerirq.asm
 Assembling regression_suite/timerirq.asm
 Pass 1...

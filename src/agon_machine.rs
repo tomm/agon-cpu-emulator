@@ -251,22 +251,14 @@ impl AgonMachine {
                         self.mos_map = mos_map;
                     }
                     Err(e) => {
-                        println!("Error reading {}, hostfs disabled: {}", mos_map.display(), e);
+                        println!("Error reading {}. hostfs integration disabled: {}", mos_map.display(), e);
                         self.enable_hostfs = false;
                     }
                 }
             }
             Err(e) => {
-                println!("{}", e);
-                println!("Failed to load {}. Falling back on inbuilt MOS mappings...", mos_map.display());
-                // checksum the loaded MOS, to identify supported versions
-                let checksum = z80_mem_tools::checksum(self, 0, code.len() as u32);
-                if checksum != 0xc102d8 {
-                    eprintln!("WARNING: Unsupported MOS version (only 1.03 is supported): disabling hostfs");
-                    self.enable_hostfs = false;
-                } else {
-                    self.mos_map = mos::MOS_103_MAP.clone();
-                }
+                println!("Error reading {}. hostfs integration disabled: {}", mos_map.display(), e);
+                self.enable_hostfs = false;
             }
         }
     }
@@ -306,12 +298,15 @@ impl AgonMachine {
         let fptr = self._peek24(cpu.state.sp() + 9);
         //eprintln!("f_gets(buf: ${:x}, len: ${:x}, fptr: ${:x})", buf, max_len, fptr);
 
-        match self.open_files.get(&fptr) {
-            Some(mut f) => {
+        let fresult = 'outer: {
+            if let Some(mut f) = self.open_files.get(&fptr) {
                 let mut line = vec![];
                 let mut host_buf = vec![0; 1];
                 for _ in 0..max_len {
-                    let n_read = f.read(host_buf.as_mut_slice()).unwrap();
+                    let n_read = match f.read(host_buf.as_mut_slice()) {
+                        Ok(n_read) => n_read,
+                        Err(_) => break 'outer mos::FR_DISK_ERR
+                    };
 
                     if n_read == 0 {
                         break;
@@ -321,7 +316,11 @@ impl AgonMachine {
                     if host_buf[0] == 10 || host_buf[0] == 0 { break; }
                 }
                 // no f.tell()...
-                let fpos = f.seek(SeekFrom::Current(0)).unwrap();
+                let fpos = match f.seek(SeekFrom::Current(0)) {
+                    Ok(n) => n,
+                    Err(_) => break 'outer mos::FR_DISK_ERR
+                };
+
                 // save file position to FIL.fptr U32
                 self._poke24(fptr + mos::FIL_MEMBER_FPTR, fpos as u32);
                 for b in line {
@@ -329,12 +328,13 @@ impl AgonMachine {
                     buf += 1;
                 }
                 self.poke(buf, 0);
-                cpu.state.reg.set24(Reg16::HL, 0); // success
+
+                mos::FR_OK
+            } else {
+                mos::FR_DISK_ERR
             }
-            None => {
-                cpu.state.reg.set24(Reg16::HL, 1); // error
-            }
-        }
+        };
+        cpu.state.reg.set24(Reg16::HL, fresult);
         let mut env = Environment::new(&mut cpu.state, self);
         env.subroutine_return();
     }
@@ -343,24 +343,27 @@ impl AgonMachine {
         let ch = self._peek24(cpu.state.sp() + 3);
         let fptr = self._peek24(cpu.state.sp() + 6);
 
-        match self.open_files.get(&fptr) {
-            Some(mut f) => {
-                f.write(&[ch as u8]).unwrap();
+        let fresult = 'outer: {
+            if let Some(mut f) = self.open_files.get(&fptr) {
+                if f.write(&[ch as u8]).is_err() {
+                    break 'outer mos::FR_DISK_ERR;
+                }
 
                 // no f.tell()...
-                let fpos = f.seek(SeekFrom::Current(0)).unwrap();
+                let fpos = match f.seek(SeekFrom::Current(0)) {
+                    Ok(n) => n,
+                    Err(_) => break 'outer mos::FR_DISK_ERR
+                };
                 // save file position to FIL.fptr
                 self._poke24(fptr + mos::FIL_MEMBER_FPTR, fpos as u32);
 
-                // success
-                cpu.state.reg.set24(Reg16::HL, 0);
+                mos::FR_OK
+            } else {
+                mos::FR_DISK_ERR
             }
-            None => {
-                // error
-                cpu.state.reg.set24(Reg16::HL, 1);
-            }
-        }
+        };
 
+        cpu.state.reg.set24(Reg16::HL, fresult);
         let mut env = Environment::new(&mut cpu.state, self);
         env.subroutine_return();
     }
@@ -372,30 +375,31 @@ impl AgonMachine {
         let num_written_ptr = self._peek24(cpu.state.sp() + 12);
         //eprintln!("f_write(${:x}, ${:x}, {}, ${:x})", fptr, buf, num, num_written_ptr);
 
-        match self.open_files.get(&fptr) {
-            Some(mut f) => {
+        let fresult = 'outer: {
+            if let Some(mut f) = self.open_files.get(&fptr) {
                 for i in 0..num {
                     let byte = self.peek(buf + i);
-                    f.write(&[byte]).unwrap();
+                    if f.write(&[byte]).is_err() { break 'outer mos::FR_DISK_ERR }
                 }
 
                 // no f.tell()...
-                let fpos = f.seek(SeekFrom::Current(0)).unwrap();
+                let fpos = match f.seek(SeekFrom::Current(0)) {
+                    Ok(n) => n,
+                    Err(_) => break 'outer mos::FR_DISK_ERR
+                };
                 // save file position to FIL.fptr
                 self._poke24(fptr + mos::FIL_MEMBER_FPTR, fpos as u32);
 
                 // inform caller that all bytes were written
                 self._poke24(num_written_ptr, num);
 
-                // success
-                cpu.state.reg.set24(Reg16::HL, 0);
+                mos::FR_OK
+            } else {
+                mos::FR_DISK_ERR
             }
-            None => {
-                // error
-                cpu.state.reg.set24(Reg16::HL, 1);
-            }
-        }
+        };
 
+        cpu.state.reg.set24(Reg16::HL, fresult);
         let mut env = Environment::new(&mut cpu.state, self);
         env.subroutine_return();
     }
@@ -406,28 +410,36 @@ impl AgonMachine {
         let len = self._peek24(cpu.state.sp() + 9);
         let bytes_read_ptr = self._peek24(cpu.state.sp() + 12);
         //eprintln!("f_read(${:x}, ${:x}, ${:x}, ${:x})", fptr, buf, len, bytes_read_ptr);
-        match self.open_files.get(&fptr) {
-            Some(mut f) => {
-                let mut host_buf: Vec<u8> = vec![0; len as usize];
-                let num_bytes_read = f.read(host_buf.as_mut_slice()).unwrap();
-                // no f.tell()...
-                let fpos = f.seek(SeekFrom::Current(0)).unwrap();
-                // copy to agon ram 
-                for b in host_buf {
-                    self.poke(buf, b);
-                    buf += 1;
-                }
-                // save file position to FIL.fptr
-                self._poke24(fptr + mos::FIL_MEMBER_FPTR, fpos as u32);
-                // save num bytes read
-                self._poke24(bytes_read_ptr, num_bytes_read as u32);
 
-                cpu.state.reg.set24(Reg16::HL, 0); // ok
+        let fresult = 'outer: {
+            if let Some(mut f) = self.open_files.get(&fptr) {
+                let mut host_buf: Vec<u8> = vec![0; len as usize];
+                if let Ok(num_bytes_read) = f.read(host_buf.as_mut_slice()) {
+                    // no f.tell()...
+                    let fpos = match f.seek(SeekFrom::Current(0)) {
+                        Ok(fpos) => fpos,
+                        Err(_) => break 'outer mos::FR_DISK_ERR
+                    };
+                    // copy to agon ram 
+                    for b in host_buf {
+                        self.poke(buf, b);
+                        buf += 1;
+                    }
+                    // save file position to FIL.fptr
+                    self._poke24(fptr + mos::FIL_MEMBER_FPTR, fpos as u32);
+                    // save num bytes read
+                    self._poke24(bytes_read_ptr, num_bytes_read as u32);
+
+                    mos::FR_OK
+                } else {
+                    mos::FR_DISK_ERR
+                }
+            } else {
+                mos::FR_DISK_ERR
             }
-            None => {
-                cpu.state.reg.set24(Reg16::HL, 1); // error
-            }
-        }
+        };
+
+        cpu.state.reg.set24(Reg16::HL, fresult);
         let mut env = Environment::new(&mut cpu.state, self);
         env.subroutine_return();
     }

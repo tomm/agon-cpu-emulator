@@ -1,3 +1,4 @@
+load mos
 ez80asm regression_suite/timerirq.asm
 load regression_suite/timerirq.bin
 run
