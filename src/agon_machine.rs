@@ -7,9 +7,10 @@ use std::io::{ Seek, SeekFrom, Read, Write };
 use crate::{ debugger, prt_timer };
 use rand::Rng;
 
-const ROM_SIZE: usize = 0x40000; // 256 KiB
+const ROM_SIZE: usize = 0x40000; // 256 KiB (actually 128KiB of flash, and 128KiB of nothing)
 const RAM_SIZE: usize = 0x80000; // 512 KiB
 const MEM_SIZE: usize = ROM_SIZE + RAM_SIZE;
+const ONCHIP_RAM_SIZE: u32 = 0x2000; // 8KiB
 
 pub enum RamInit {
     Zero,
@@ -18,6 +19,7 @@ pub enum RamInit {
 
 pub struct AgonMachine {
     mem: [u8; MEM_SIZE],
+    onchip_mem: [u8; ONCHIP_RAM_SIZE as usize],  // 8K SRAM on the EZ80F92
     tx: Sender<u8>,
     rx: Receiver<u8>,
     rx_buf: Option<u8>,
@@ -33,6 +35,8 @@ pub struct AgonMachine {
     clockspeed_hz: u64,
     prt_timers: [prt_timer::PrtTimer; 6],
     ram_init: RamInit,
+    onchip_mem_enable: bool,
+    onchip_mem_segment: u8,
     mos_bin: std::path::PathBuf,
     // last_pc and mem_out_of_bounds are used by the debugger
     pub last_pc: u32,
@@ -52,7 +56,10 @@ impl Machine for AgonMachine {
 
     fn peek(&self, address: u32) -> u8 {
         self.use_cycles(if address < 0x40000 { 2 } else { 1 });
-        if self.is_address_mapped(address) {
+
+        if let Some(onchip_ram_offset) = self.offset_in_onchip_ram(address) {
+            self.onchip_mem[onchip_ram_offset as usize]
+        } else if self.is_address_mapped(address) {
             self.mem[address as usize]
         } else {
             self.mem_out_of_bounds.set(Some(address));
@@ -62,7 +69,10 @@ impl Machine for AgonMachine {
 
     fn poke(&mut self, address: u32, value: u8) {
         self.use_cycles(1);
-        if self.is_address_mapped(address) {
+
+        if let Some(onchip_ram_offset) = self.offset_in_onchip_ram(address) {
+            self.onchip_mem[onchip_ram_offset as usize] = value;
+        } else if self.is_address_mapped(address) {
             self.mem[address as usize] = value;
         } else {
             self.mem_out_of_bounds.set(Some(address));
@@ -101,6 +111,15 @@ impl Machine for AgonMachine {
             0xa2 => {
                 0x0 // UART0 clear to send
             }
+
+            0xb4 => {
+                if self.onchip_mem_enable { 0x80 } else { 0 }
+            }
+
+            0xb5 => {
+                self.onchip_mem_segment
+            }
+
             0xc0 => {
                 // uart0 receive
                 self.maybe_fill_rx_buf();
@@ -158,6 +177,15 @@ impl Machine for AgonMachine {
 
             // GPIO PB_DR
             0x9a => {}
+
+            0xb4 => {
+                self.onchip_mem_enable = value & 0x80 != 0;
+            }
+
+            0xb5 => {
+                self.onchip_mem_segment = value;
+            }
+
             /* UART0_REG_THR - send data to VDP */
             0xc0 => self.tx.send(value).unwrap(),
             _ => {
@@ -180,6 +208,7 @@ impl AgonMachine {
     pub fn new(config: AgonMachineConfig) -> Self {
         AgonMachine {
             mem: [0; MEM_SIZE],
+            onchip_mem: [0; ONCHIP_RAM_SIZE as usize],
             tx: config.to_vdp,
             rx: config.from_vdp,
             rx_buf: None,
@@ -206,12 +235,21 @@ impl AgonMachine {
             cycle_counter: std::cell::Cell::new(0),
             paused: false,
             mos_bin: config.mos_bin,
+            onchip_mem_enable: true,
+            onchip_mem_segment: 0xff,
         }
     }
 
     #[inline]
     fn is_address_mapped(&self, address: u32) -> bool {
         address < 0x20000 || (address >= 0x40000 && address < 0xc0000)
+    }
+
+    #[inline]
+    fn offset_in_onchip_ram(&self, address: u32) -> Option<u32> {
+        if !self.onchip_mem_enable { return None };
+        let offset = address.wrapping_sub(((self.onchip_mem_segment as u32) << 16) + 0xe000);
+        if offset < ONCHIP_RAM_SIZE { Some(offset) } else { None }
     }
 
     pub fn set_sdcard_directory(&mut self, path: std::path::PathBuf) {
@@ -938,7 +976,11 @@ impl AgonMachine {
         match self.ram_init {
             RamInit::Random => {
                 for i in 0x40000..0xc0000 {
-                    self.poke(i, rand::thread_rng().gen_range(0..255));
+                    self.poke(i, rand::thread_rng().gen_range(0..=255));
+                }
+
+                for i in 0..ONCHIP_RAM_SIZE {
+                    self.onchip_mem[i as usize] = rand::thread_rng().gen_range(0..=255);
                 }
             }
             RamInit::Zero => {}
