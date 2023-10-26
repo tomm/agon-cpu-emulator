@@ -31,6 +31,7 @@ pub struct AgonMachine {
     hostfs_root_dir: std::path::PathBuf,
     mos_current_dir: MosPath,
     vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    soft_reset: std::sync::Arc<std::sync::atomic::AtomicBool>,
     last_vsync_count: u32,
     clockspeed_hz: u64,
     prt_timers: [prt_timer::PrtTimer; 6],
@@ -199,6 +200,7 @@ pub struct AgonMachineConfig {
     pub to_vdp: Sender<u8>,
     pub from_vdp: Receiver<u8>,
     pub vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    pub soft_reset: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub clockspeed_hz: u64,
     pub ram_init: RamInit,
     pub mos_bin: std::path::PathBuf,
@@ -219,6 +221,7 @@ impl AgonMachine {
             hostfs_root_dir: std::env::current_dir().unwrap(),
             mos_current_dir: MosPath(std::path::PathBuf::new()),
             vsync_counter: config.vsync_counter,
+            soft_reset: config.soft_reset,
             last_vsync_count: 0,
             clockspeed_hz: config.clockspeed_hz,
             prt_timers: [
@@ -934,6 +937,16 @@ impl AgonMachine {
     #[inline]
     pub fn do_interrupts(&mut self, cpu: &mut Cpu) {
         if cpu.state.instructions_executed % 64 == 0 && cpu.state.reg.get_iff1() {
+            // perform a soft reset if requested
+            if self.soft_reset.load(std::sync::atomic::Ordering::Relaxed) {
+                // MOS soft reset code always runs from ADL mode.
+                // and set_pc(0) will actually set pc := (mb<<16 + 0) in non-adl mode
+                cpu.state.reg.adl = true;
+                cpu.state.reg.madl = true;
+                cpu.state.set_pc(0);
+                self.soft_reset.store(false, std::sync::atomic::Ordering::Relaxed);
+            }
+
             // fire uart interrupt
             if self.maybe_fill_rx_buf() != None {
                 let mut env = Environment::new(&mut cpu.state, self);
