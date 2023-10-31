@@ -48,4 +48,4 @@ sh ./run_regression_test.sh
 ## TODO
 
 - [ ] Timer clock sources other than the system clock
-- [ ] On-CPU ram needs to be supported
+- [ ] Real SPI sdcard support
