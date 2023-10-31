@@ -155,6 +155,7 @@ fn main() {
     let (to_vdp, rx_ez80_to_vdp): (Sender<u8>, Receiver<u8>) = mpsc::channel();
     let vsync_counter_vdp = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
     let vsync_counter_ez80 = vsync_counter_vdp.clone();
+    let soft_reset = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     let mut unlimited_cpu = false;
     for arg in std::env::args().skip(1) {
@@ -177,6 +178,7 @@ fn main() {
             ram_init: RamInit::Random,
             to_vdp,
             from_vdp,
+            soft_reset,
             vsync_counter: vsync_counter_ez80,
             clockspeed_hz: if unlimited_cpu { std::u64::MAX } else { 18_432_000 },
             mos_bin: std::path::PathBuf::from("MOS.bin"),
