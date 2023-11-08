@@ -1,4 +1,4 @@
-use agon_cpu_emulator::{ RamInit, AgonMachine, AgonMachineConfig };
+use agon_cpu_emulator::{ RamInit, AgonMachine, AgonMachineConfig, gpio };
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
 use std::io::{ self, BufRead, Write };
@@ -94,7 +94,7 @@ fn handle_vdp(tx_to_ez80: &Sender<u8>, rx_from_ez80: &Receiver<u8>, vdp_terminal
 }
 
 fn start_vdp(tx_vdp_to_ez80: Sender<u8>, rx_ez80_to_vdp: Receiver<u8>,
-             vsync_counter_vdp: std::sync::Arc<std::sync::atomic::AtomicU32>) {
+             gpios: std::sync::Arc<std::sync::Mutex<gpio::GpioSet>>) {
     let (tx_stdin, rx_stdin): (Sender<String>, Receiver<String>) = mpsc::channel();
 
     // to avoid blocking on stdin, use a thread and channel to read from it
@@ -118,8 +118,13 @@ fn start_vdp(tx_vdp_to_ez80: Sender<u8>, rx_ez80_to_vdp: Receiver<u8>,
 
         // a fake vsync every 16ms
         if last_vsync.elapsed() >= std::time::Duration::from_micros(16666) {
-            // notify ez80 by incrementing a shared atomic integer
-            vsync_counter_vdp.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            // signal vsync to ez80 via GPIO (pin 1 (from 0) of GPIO port B)
+            {
+                let mut gpios = gpios.lock().unwrap();
+                gpios.b.set_input_pin(1, true);
+                gpios.b.set_input_pin(1, false);
+            }
+
             last_vsync = last_vsync.checked_add(std::time::Duration::from_micros(16666)).unwrap_or(std::time::Instant::now());
         }
 
@@ -153,9 +158,9 @@ fn start_vdp(tx_vdp_to_ez80: Sender<u8>, rx_ez80_to_vdp: Receiver<u8>,
 fn main() {
     let (tx_vdp_to_ez80, from_vdp): (Sender<u8>, Receiver<u8>) = mpsc::channel();
     let (to_vdp, rx_ez80_to_vdp): (Sender<u8>, Receiver<u8>) = mpsc::channel();
-    let vsync_counter_vdp = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
-    let vsync_counter_ez80 = vsync_counter_vdp.clone();
     let soft_reset = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let gpios = std::sync::Arc::new(std::sync::Mutex::new(gpio::GpioSet::new()));
+    let gpios_ = gpios.clone();
 
     let mut unlimited_cpu = false;
     for arg in std::env::args().skip(1) {
@@ -179,7 +184,7 @@ fn main() {
             to_vdp,
             from_vdp,
             soft_reset,
-            vsync_counter: vsync_counter_ez80,
+            gpios: gpios_,
             clockspeed_hz: if unlimited_cpu { std::u64::MAX } else { 18_432_000 },
             mos_bin: std::path::PathBuf::from("MOS.bin"),
         });
@@ -187,5 +192,5 @@ fn main() {
         machine.start(None);
     });
 
-    start_vdp(tx_vdp_to_ez80, rx_ez80_to_vdp, vsync_counter_vdp);
+    start_vdp(tx_vdp_to_ez80, rx_ez80_to_vdp, gpios);
 }

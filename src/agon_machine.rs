@@ -4,7 +4,8 @@ use std::sync::mpsc::{Sender, Receiver};
 use std::sync::mpsc;
 use std::collections::HashMap;
 use std::io::{ Seek, SeekFrom, Read, Write };
-use crate::{ debugger, prt_timer };
+use crate::{ debugger, prt_timer, gpio };
+use std::sync::{ Arc, Mutex };
 use rand::Rng;
 
 const ROM_SIZE: usize = 0x40000; // 256 KiB (actually 128KiB of flash, and 128KiB of nothing)
@@ -30,11 +31,10 @@ pub struct AgonMachine {
     mos_map: mos::MosMap,
     hostfs_root_dir: std::path::PathBuf,
     mos_current_dir: MosPath,
-    vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    soft_reset: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    last_vsync_count: u32,
+    soft_reset: Arc<std::sync::atomic::AtomicBool>,
     clockspeed_hz: u64,
     prt_timers: [prt_timer::PrtTimer; 6],
+    gpios: Arc<Mutex<gpio::GpioSet>>,
     ram_init: RamInit,
     onchip_mem_enable: bool,
     onchip_mem_segment: u8,
@@ -107,11 +107,20 @@ impl Machine for AgonMachine {
             0x90 => self.prt_timers[5].read_counter_low(),
             0x91 => self.prt_timers[5].read_counter_high(),
 
-            // GPIO PB_DR
-            0x9a => 0x0,
-            0xa2 => {
-                0x0 // UART0 clear to send
-            }
+            0x9a => { let gpios = self.gpios.lock().unwrap(); gpios.b.get_dr() }
+            0x9b => { let gpios = self.gpios.lock().unwrap(); gpios.b.ddr }
+            0x9c => { let gpios = self.gpios.lock().unwrap(); gpios.b.alt1 }
+            0x9d => { let gpios = self.gpios.lock().unwrap(); gpios.b.alt2 }
+
+            0x9e => { let gpios = self.gpios.lock().unwrap(); gpios.c.get_dr() }
+            0x9f => { let gpios = self.gpios.lock().unwrap(); gpios.c.ddr }
+            0xa0 => { let gpios = self.gpios.lock().unwrap(); gpios.c.alt1 }
+            0xa1 => { let gpios = self.gpios.lock().unwrap(); gpios.c.alt2 }
+
+            0xa2 => { let gpios = self.gpios.lock().unwrap(); gpios.d.get_dr() }
+            0xa3 => { let gpios = self.gpios.lock().unwrap(); gpios.d.ddr }
+            0xa4 => { let gpios = self.gpios.lock().unwrap(); gpios.d.alt1 }
+            0xa5 => { let gpios = self.gpios.lock().unwrap(); gpios.d.alt2 }
 
             0xb4 => {
                 if self.onchip_mem_enable { 0x80 } else { 0 }
@@ -176,8 +185,20 @@ impl Machine for AgonMachine {
             0x90 => self.prt_timers[5].write_reload_low(value),
             0x91 => self.prt_timers[5].write_reload_high(value),
 
-            // GPIO PB_DR
-            0x9a => {}
+            0x9a => { let mut gpios = self.gpios.lock().unwrap(); gpios.b.set_dr(value); gpios.b.update(); }
+            0x9b => { let mut gpios = self.gpios.lock().unwrap(); gpios.b.ddr = value; gpios.b.update(); }
+            0x9c => { let mut gpios = self.gpios.lock().unwrap(); gpios.b.alt1 = value; gpios.b.update(); }
+            0x9d => { let mut gpios = self.gpios.lock().unwrap(); gpios.b.alt2 = value; gpios.b.update(); }
+
+            0x9e => { let mut gpios = self.gpios.lock().unwrap(); gpios.c.set_dr(value); gpios.c.update(); }
+            0x9f => { let mut gpios = self.gpios.lock().unwrap(); gpios.c.ddr = value; gpios.c.update(); }
+            0xa0 => { let mut gpios = self.gpios.lock().unwrap(); gpios.c.alt1 = value; gpios.c.update(); }
+            0xa1 => { let mut gpios = self.gpios.lock().unwrap(); gpios.c.alt2 = value; gpios.c.update(); }
+
+            0xa2 => { let mut gpios = self.gpios.lock().unwrap(); gpios.d.set_dr(value); gpios.d.update(); }
+            0xa3 => { let mut gpios = self.gpios.lock().unwrap(); gpios.d.ddr = value; gpios.d.update(); }
+            0xa4 => { let mut gpios = self.gpios.lock().unwrap(); gpios.d.alt1 = value; gpios.d.update(); }
+            0xa5 => { let mut gpios = self.gpios.lock().unwrap(); gpios.d.alt2 = value; gpios.d.update(); }
 
             0xb4 => {
                 self.onchip_mem_enable = value & 0x80 != 0;
@@ -199,11 +220,11 @@ impl Machine for AgonMachine {
 pub struct AgonMachineConfig {
     pub to_vdp: Sender<u8>,
     pub from_vdp: Receiver<u8>,
-    pub vsync_counter: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    pub soft_reset: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub soft_reset: Arc<std::sync::atomic::AtomicBool>,
     pub clockspeed_hz: u64,
     pub ram_init: RamInit,
     pub mos_bin: std::path::PathBuf,
+    pub gpios: Arc<Mutex<gpio::GpioSet>>,
 }
 
 impl AgonMachine {
@@ -220,9 +241,7 @@ impl AgonMachine {
             mos_map: mos::MosMap::default(),
             hostfs_root_dir: std::env::current_dir().unwrap(),
             mos_current_dir: MosPath(std::path::PathBuf::new()),
-            vsync_counter: config.vsync_counter,
             soft_reset: config.soft_reset,
-            last_vsync_count: 0,
             clockspeed_hz: config.clockspeed_hz,
             prt_timers: [
                 prt_timer::PrtTimer::new(),
@@ -232,6 +251,7 @@ impl AgonMachine {
                 prt_timer::PrtTimer::new(),
                 prt_timer::PrtTimer::new(),
             ],
+            gpios: config.gpios,
             ram_init: config.ram_init,
             last_pc: 0,
             mem_out_of_bounds: std::cell::Cell::new(None),
@@ -935,6 +955,19 @@ impl AgonMachine {
     }
 
     #[inline]
+    pub fn fire_gpio_interrupts(&mut self, cpu: &mut Cpu, vector_base: u32, interrupts_due: u8) {
+        if interrupts_due != 0 {
+            let mut env = Environment::new(&mut cpu.state, self);
+            for pin in 0..=7 {
+                if interrupts_due & (1<<pin) != 0 {
+                    //println!("Firing interrupt 0x{:x}", vector_base + 2*pin);
+                    env.interrupt(vector_base + 2*pin);
+                }
+            }
+        }
+    }
+
+    #[inline]
     pub fn do_interrupts(&mut self, cpu: &mut Cpu) {
         if cpu.state.instructions_executed % 64 == 0 && cpu.state.reg.get_iff1() {
             // perform a soft reset if requested
@@ -953,12 +986,19 @@ impl AgonMachine {
                 env.interrupt(0x18); // uart0_handler
             }
 
-            // fire vsync interrupt
-            let cur_vsync_count = self.vsync_counter.load(std::sync::atomic::Ordering::Relaxed);
-            if cur_vsync_count != self.last_vsync_count {
-                self.last_vsync_count = cur_vsync_count;
-                let mut env = Environment::new(&mut cpu.state, self);
-                env.interrupt(0x32);
+            // fire gpio interrupts
+            {
+                let (b_int, c_int, d_int) = {
+                    let mut gpios = self.gpios.lock().unwrap();
+                    let b_int = gpios.b.get_interrupt_due();
+                    let c_int = gpios.c.get_interrupt_due();
+                    let d_int = gpios.d.get_interrupt_due();
+                    (b_int, c_int, d_int)
+                };
+
+                self.fire_gpio_interrupts(cpu, 0x30, b_int);
+                self.fire_gpio_interrupts(cpu, 0x40, c_int);
+                self.fire_gpio_interrupts(cpu, 0x50, d_int);
             }
 
             for i in 0..self.prt_timers.len() {
