@@ -1,10 +1,8 @@
 use ez80::*;
-use crate::mos;
 use std::sync::mpsc::{Sender, Receiver};
-use std::sync::mpsc;
 use std::collections::HashMap;
 use std::io::{ Seek, SeekFrom, Read, Write };
-use crate::{ debugger, prt_timer, gpio };
+use crate::{ mos, debugger, prt_timer, gpio, uart };
 use std::sync::{ Arc, Mutex };
 use rand::Rng;
 
@@ -21,9 +19,8 @@ pub enum RamInit {
 pub struct AgonMachine {
     mem: [u8; MEM_SIZE],
     onchip_mem: [u8; ONCHIP_RAM_SIZE as usize],  // 8K SRAM on the EZ80F92
-    tx: Sender<u8>,
-    rx: Receiver<u8>,
-    rx_buf: Option<u8>,
+    uart0: uart::Uart,
+    uart1: uart::Uart,
     // map from MOS fatfs FIL struct ptr to rust File handle
     open_files: HashMap<u32, std::fs::File>,
     open_dirs: HashMap<u32, std::fs::ReadDir>,
@@ -131,27 +128,54 @@ impl Machine for AgonMachine {
             }
 
             0xc0 => {
-                // uart0 receive
-                self.maybe_fill_rx_buf();
-
-                let maybe_data = self.rx_buf;
-                self.rx_buf = None;
-
-                match maybe_data {
-                    Some(data) => data,
-                    None => 0
+                if self.uart0.is_access_brg_registers() {
+                    self.uart0.brg_div as u8
+                } else {
+                    self.uart0.receive_byte()
                 }
             }
+            0xc1 => {
+                if self.uart0.is_access_brg_registers() {
+                    (self.uart0.brg_div >> 8) as u8
+                } else {
+                    self.uart0.ier
+                }
+            }
+            0xc3 => self.uart0.lctl,
             0xc5 => {
-                self.maybe_fill_rx_buf();
-
-                match self.rx_buf {
+                match self.uart0.maybe_fill_rx_buf() {
                     Some(_) => 0x41,
                     None => 0x40
                 }
                 // UART_LSR_ETX		EQU 	%40 ; Transmit empty (can send)
                 // UART_LSR_RDY		EQU	%01		; Data ready (can receive)
             }
+
+            /* uart1 is kindof useless in the emulator, but ... */
+            0xd0 => {
+                if self.uart1.is_access_brg_registers() {
+                    self.uart1.brg_div as u8
+                } else {
+                    self.uart1.receive_byte()
+                }
+            }
+            0xd1 => {
+                if self.uart1.is_access_brg_registers() {
+                    (self.uart1.brg_div >> 8) as u8
+                } else {
+                    self.uart1.ier
+                }
+            }
+            0xd3 => self.uart1.lctl,
+            0xd5 => {
+                match self.uart1.maybe_fill_rx_buf() {
+                    Some(_) => 0x41,
+                    None => 0x40
+                }
+                // UART_LSR_ETX		EQU 	%40 ; Transmit empty (can send)
+                // UART_LSR_RDY		EQU	%01		; Data ready (can receive)
+            }
+
             _ => {
                 //println!("IN({:02X})", address);
                 0
@@ -209,7 +233,47 @@ impl Machine for AgonMachine {
             }
 
             /* UART0_REG_THR - send data to VDP */
-            0xc0 => self.tx.send(value).unwrap(),
+            0xc0 => {
+                if self.uart0.is_access_brg_registers() {
+                    self.uart0.brg_div &= 0xff00;
+                    self.uart0.brg_div |= value as u16;
+                } else {
+                    self.uart0.send_byte(value);
+                }
+            }
+            0xc1 => {
+                if self.uart0.is_access_brg_registers() {
+                    self.uart0.brg_div &= 0xff;
+                    self.uart0.brg_div |= (value as u16) << 8;
+                } else {
+                    //println!("setting uart ier: 0x{:x}", value);
+                    self.uart0.ier = value;
+                }
+            }
+            0xc2 => self.uart0.fctl = value,
+            0xc3 => self.uart0.lctl = value,
+
+            /* uart1 is kindof useless in the emulator, but ... */
+            0xd0 => {
+                if self.uart1.is_access_brg_registers() {
+                    self.uart1.brg_div &= 0xff00;
+                    self.uart1.brg_div |= value as u16;
+                } else {
+                    self.uart1.send_byte(value);
+                }
+            }
+            0xd1 => {
+                if self.uart1.is_access_brg_registers() {
+                    self.uart1.brg_div &= 0xff;
+                    self.uart1.brg_div |= (value as u16) << 8;
+                } else {
+                    //println!("setting uart ier: 0x{:x}", value);
+                    self.uart1.ier = value;
+                }
+            }
+            0xd2 => self.uart1.fctl = value,
+            0xd3 => self.uart1.lctl = value,
+
             _ => {
                 //println!("OUT(${:02X}) = ${:x}", address, value);
             }
@@ -232,9 +296,8 @@ impl AgonMachine {
         AgonMachine {
             mem: [0; MEM_SIZE],
             onchip_mem: [0; ONCHIP_RAM_SIZE as usize],
-            tx: config.to_vdp,
-            rx: config.from_vdp,
-            rx_buf: None,
+            uart0: uart::Uart::new(Some((config.to_vdp, config.from_vdp))),
+            uart1: uart::Uart::new(None),
             open_files: HashMap::new(),
             open_dirs: HashMap::new(),
             enable_hostfs: true,
@@ -277,17 +340,6 @@ impl AgonMachine {
 
     pub fn set_sdcard_directory(&mut self, path: std::path::PathBuf) {
         self.hostfs_root_dir = path;
-    }
-
-    fn maybe_fill_rx_buf(&mut self) -> Option<u8> {
-        if self.rx_buf == None {
-            self.rx_buf = match self.rx.try_recv() {
-                Ok(data) => Some(data),
-                Err(mpsc::TryRecvError::Disconnected) => panic!(),
-                Err(mpsc::TryRecvError::Empty) => None
-            }
-        }
-        self.rx_buf
     }
 
     fn load_mos(&mut self) {
@@ -955,21 +1007,25 @@ impl AgonMachine {
     }
 
     #[inline]
-    pub fn fire_gpio_interrupts(&mut self, cpu: &mut Cpu, vector_base: u32, interrupts_due: u8) {
+    pub fn fire_gpio_interrupts(&mut self, cpu: &mut Cpu, vector_base: u32, interrupts_due: u8) -> bool {
         if interrupts_due != 0 {
             let mut env = Environment::new(&mut cpu.state, self);
             for pin in 0..=7 {
                 if interrupts_due & (1<<pin) != 0 {
                     //println!("Firing interrupt 0x{:x}", vector_base + 2*pin);
                     env.interrupt(vector_base + 2*pin);
+                    return true;
                 }
             }
         }
+        false
     }
 
     #[inline]
     pub fn do_interrupts(&mut self, cpu: &mut Cpu) {
         if cpu.state.instructions_executed % 64 == 0 && cpu.state.reg.get_iff1() {
+            // Interrupts in priority order
+
             // perform a soft reset if requested
             if self.soft_reset.load(std::sync::atomic::Ordering::Relaxed) {
                 // MOS soft reset code always runs from ADL mode.
@@ -978,12 +1034,22 @@ impl AgonMachine {
                 cpu.state.reg.madl = true;
                 cpu.state.set_pc(0);
                 self.soft_reset.store(false, std::sync::atomic::Ordering::Relaxed);
+                return;
+            }
+
+            for i in 0..self.prt_timers.len() {
+                if self.prt_timers[i].irq_due() {
+                    Environment::new(&mut cpu.state, self).interrupt(0xa + 2*(i as u32));
+                    return;
+                }
             }
 
             // fire uart interrupt
-            if self.maybe_fill_rx_buf() != None {
+            if self.uart0.is_rx_interrupt_enabled() && self.uart0.maybe_fill_rx_buf() != None {
                 let mut env = Environment::new(&mut cpu.state, self);
+                //println!("uart interrupt!");
                 env.interrupt(0x18); // uart0_handler
+                return;
             }
 
             // fire gpio interrupts
@@ -996,14 +1062,14 @@ impl AgonMachine {
                     (b_int, c_int, d_int)
                 };
 
-                self.fire_gpio_interrupts(cpu, 0x30, b_int);
-                self.fire_gpio_interrupts(cpu, 0x40, c_int);
-                self.fire_gpio_interrupts(cpu, 0x50, d_int);
-            }
-
-            for i in 0..self.prt_timers.len() {
-                if self.prt_timers[i].irq_due() {
-                    Environment::new(&mut cpu.state, self).interrupt(0xa + 2*(i as u32));
+                if self.fire_gpio_interrupts(cpu, 0x30, b_int) {
+                    return;
+                }
+                if self.fire_gpio_interrupts(cpu, 0x40, c_int) {
+                    return;
+                }
+                if self.fire_gpio_interrupts(cpu, 0x50, d_int) {
+                    return;
                 }
             }
         }
