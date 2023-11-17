@@ -70,7 +70,7 @@ impl Machine for AgonMachine {
 
         if let Some(onchip_ram_offset) = self.offset_in_onchip_ram(address) {
             self.onchip_mem[onchip_ram_offset as usize] = value;
-        } else if self.is_address_mapped(address) {
+        } else if self.is_external_ram(address) {
             self.mem[address as usize] = value;
         } else {
             self.mem_out_of_bounds.set(Some(address));
@@ -328,7 +328,12 @@ impl AgonMachine {
 
     #[inline]
     fn is_address_mapped(&self, address: u32) -> bool {
-        address < 0x20000 || (address >= 0x40000 && address < 0xc0000)
+        address < 0x20000 || self.is_external_ram(address)
+    }
+
+    #[inline]
+    fn is_external_ram(&self, address: u32) -> bool {
+        address >= 0x40000 && address < 0xc0000
     }
 
     #[inline]
@@ -1012,7 +1017,6 @@ impl AgonMachine {
             let mut env = Environment::new(&mut cpu.state, self);
             for pin in 0..=7 {
                 if interrupts_due & (1<<pin) != 0 {
-                    //println!("Firing interrupt 0x{:x}", vector_base + 2*pin);
                     env.interrupt(vector_base + 2*pin);
                     return true;
                 }
