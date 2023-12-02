@@ -6,9 +6,8 @@ use crate::{ mos, debugger, prt_timer, gpio, uart };
 use std::sync::{ Arc, Mutex };
 use rand::Rng;
 
-const ROM_SIZE: usize = 0x40000; // 256 KiB (actually 128KiB of flash, and 128KiB of nothing)
-const RAM_SIZE: usize = 0x80000; // 512 KiB
-const MEM_SIZE: usize = ROM_SIZE + RAM_SIZE;
+const ROM_SIZE: usize = 0x20000; // 128 KiB flash
+const EXTERNAL_RAM_SIZE: usize = 0x80000; // 512 KiB
 const ONCHIP_RAM_SIZE: u32 = 0x2000; // 8KiB
 
 pub enum RamInit {
@@ -17,8 +16,9 @@ pub enum RamInit {
 }
 
 pub struct AgonMachine {
-    mem: [u8; MEM_SIZE],
-    onchip_mem: [u8; ONCHIP_RAM_SIZE as usize],  // 8K SRAM on the EZ80F92
+    mem_external: [u8; EXTERNAL_RAM_SIZE], // 512k external RAM
+    mem_rom: [u8; ROM_SIZE], // 128K ROM
+    mem_internal: [u8; ONCHIP_RAM_SIZE as usize],  // 8K SRAM on the EZ80F92
     uart0: uart::Uart,
     uart1: uart::Uart,
     // map from MOS fatfs FIL struct ptr to rust File handle
@@ -33,9 +33,15 @@ pub struct AgonMachine {
     prt_timers: [prt_timer::PrtTimer; 6],
     gpios: Arc<Mutex<gpio::GpioSet>>,
     ram_init: RamInit,
+    mos_bin: std::path::PathBuf,
+
+    // memory map config
     onchip_mem_enable: bool,
     onchip_mem_segment: u8,
-    mos_bin: std::path::PathBuf,
+    flash_addr_u: u8,
+    cs0_lbr: u8,
+    cs0_ubr: u8,
+
     // last_pc and mem_out_of_bounds are used by the debugger
     pub last_pc: u32,
     pub mem_out_of_bounds: std::cell::Cell<Option<u32>>, // address
@@ -53,13 +59,17 @@ impl Machine for AgonMachine {
     }
 
     fn peek(&self, address: u32) -> u8 {
-        self.use_cycles(if address < 0x40000 { 2 } else { 1 });
-
-        if let Some(onchip_ram_offset) = self.offset_in_onchip_ram(address) {
-            self.onchip_mem[onchip_ram_offset as usize]
-        } else if self.is_address_mapped(address) {
-            self.mem[address as usize]
+        if let Some(onchip_ram_addr) = self.get_internal_ram_address(address) {
+            self.use_cycles(1);
+            self.mem_internal[onchip_ram_addr as usize]
+        } else if let Some(rom_addr) = self.get_rom_address(address) {
+            self.use_cycles(2);
+            self.mem_rom[rom_addr as usize]
+        } else if let Some(ram_addr) = self.get_external_ram_address(address) {
+            self.use_cycles(1);
+            self.mem_external[ram_addr as usize]
         } else {
+            self.use_cycles(1);
             self.mem_out_of_bounds.set(Some(address));
             0xf5
         }
@@ -68,10 +78,12 @@ impl Machine for AgonMachine {
     fn poke(&mut self, address: u32, value: u8) {
         self.use_cycles(1);
 
-        if let Some(onchip_ram_offset) = self.offset_in_onchip_ram(address) {
-            self.onchip_mem[onchip_ram_offset as usize] = value;
-        } else if self.is_external_ram(address) {
-            self.mem[address as usize] = value;
+        if let Some(onchip_ram_addr) = self.get_internal_ram_address(address) {
+            self.mem_internal[onchip_ram_addr as usize] = value;
+        } else if let Some(rom_addr) = self.get_rom_address(address) {
+            self.mem_rom[rom_addr as usize] = value;
+        } else if let Some(ram_addr) = self.get_external_ram_address(address) {
+            self.mem_external[ram_addr as usize] = value;
         } else {
             self.mem_out_of_bounds.set(Some(address));
         }
@@ -150,6 +162,8 @@ impl Machine for AgonMachine {
                 // UART_LSR_ETX		EQU 	%40 ; Transmit empty (can send)
                 // UART_LSR_RDY		EQU	%01		; Data ready (can receive)
             }
+            0xc6 => 0x10, // uart modem status register: CTS
+            0xc7 => self.uart0.spr,
 
             /* uart1 is kindof useless in the emulator, but ... */
             0xd0 => {
@@ -175,6 +189,9 @@ impl Machine for AgonMachine {
                 // UART_LSR_ETX		EQU 	%40 ; Transmit empty (can send)
                 // UART_LSR_RDY		EQU	%01		; Data ready (can receive)
             }
+            0xd7 => self.uart1.spr,
+
+            0xf7 => self.flash_addr_u,
 
             _ => {
                 //println!("IN({:02X})", address);
@@ -224,6 +241,20 @@ impl Machine for AgonMachine {
             0xa4 => { let mut gpios = self.gpios.lock().unwrap(); gpios.d.alt1 = value; gpios.d.update(); }
             0xa5 => { let mut gpios = self.gpios.lock().unwrap(); gpios.d.alt2 = value; gpios.d.update(); }
 
+            // chip selects
+            0xa8 => self.cs0_lbr = value,
+            0xa9 => self.cs0_ubr = value,
+            0xaa => {} // CS0_CTL
+            0xab => {} // CS1_LBR
+            0xac => {} // CS1_UBR
+            0xad => {} // CS1_CTL
+            0xae => {} // CS2_LBR
+            0xaf => {} // CS2_UBR
+            0xb0 => {} // CS2_CTL
+            0xb1 => {} // CS3_LBR
+            0xb2 => {} // CS3_UBR
+            0xb3 => {} // CS3_CTL
+
             0xb4 => {
                 self.onchip_mem_enable = value & 0x80 != 0;
             }
@@ -252,6 +283,7 @@ impl Machine for AgonMachine {
             }
             0xc2 => self.uart0.fctl = value,
             0xc3 => self.uart0.lctl = value,
+            0xc7 => self.uart0.spr = value,
 
             /* uart1 is kindof useless in the emulator, but ... */
             0xd0 => {
@@ -273,6 +305,9 @@ impl Machine for AgonMachine {
             }
             0xd2 => self.uart1.fctl = value,
             0xd3 => self.uart1.lctl = value,
+            0xd7 => self.uart1.spr = value,
+
+            0xf7 => self.flash_addr_u = value,
 
             _ => {
                 //println!("OUT(${:02X}) = ${:x}", address, value);
@@ -294,8 +329,9 @@ pub struct AgonMachineConfig {
 impl AgonMachine {
     pub fn new(config: AgonMachineConfig) -> Self {
         AgonMachine {
-            mem: [0; MEM_SIZE],
-            onchip_mem: [0; ONCHIP_RAM_SIZE as usize],
+            mem_rom: [0; ROM_SIZE],
+            mem_external: [0; EXTERNAL_RAM_SIZE],
+            mem_internal: [0; ONCHIP_RAM_SIZE as usize],
             uart0: uart::Uart::new(Some((config.to_vdp, config.from_vdp))),
             uart1: uart::Uart::new(None),
             open_files: HashMap::new(),
@@ -323,24 +359,33 @@ impl AgonMachine {
             mos_bin: config.mos_bin,
             onchip_mem_enable: true,
             onchip_mem_segment: 0xff,
+            flash_addr_u: 0,
+            cs0_lbr: 0,
+            cs0_ubr: 0xff,
         }
     }
 
     #[inline]
-    fn is_address_mapped(&self, address: u32) -> bool {
-        address < 0x20000 || self.is_external_ram(address)
+    fn get_rom_address(&self, address: u32) -> Option<u32> {
+        let a: u32 = address.wrapping_sub((self.flash_addr_u as u32) << 16);
+        if a < ROM_SIZE as u32 { Some(a) } else { None }
     }
 
     #[inline]
-    fn is_external_ram(&self, address: u32) -> bool {
-        address >= 0x40000 && address < 0xc0000
-    }
-
-    #[inline]
-    fn offset_in_onchip_ram(&self, address: u32) -> Option<u32> {
+    fn get_internal_ram_address(&self, address: u32) -> Option<u32> {
         if !self.onchip_mem_enable { return None };
         let offset = address.wrapping_sub(((self.onchip_mem_segment as u32) << 16) + 0xe000);
         if offset < ONCHIP_RAM_SIZE { Some(offset) } else { None }
+    }
+
+    #[inline]
+    fn get_external_ram_address(&self, address: u32) -> Option<u32> {
+        if address >> 16 >= self.cs0_lbr as u32 && address >> 16 <= self.cs0_ubr as u32 {
+            let offset = (address & 0xffff) | (((address >> 16) & (self.cs0_ubr.wrapping_sub(self.cs0_lbr) as u32)) << 16);
+            if offset < EXTERNAL_RAM_SIZE as u32 { Some(offset) } else { None }
+        } else {
+            None
+        }
     }
 
     pub fn set_sdcard_directory(&mut self, path: std::path::PathBuf) {
@@ -357,7 +402,7 @@ impl AgonMachine {
         };
         
         for (i, e) in code.iter().enumerate() {
-            self.mem[i] = *e;
+            self.mem_rom[i] = *e;
         }
 
         let mos_map = self.mos_bin.with_extension("map");
@@ -969,7 +1014,7 @@ impl AgonMachine {
         // trapped mid-execution)
         self.last_pc = pc;
 
-        if self.enable_hostfs && pc < 0x40000 {
+        if self.enable_hostfs && pc < 0x20000 && self.flash_addr_u == 0 {
             if pc == self.mos_map.f_close { self.hostfs_mos_f_close(cpu); }
             if pc == self.mos_map.f_gets { self.hostfs_mos_f_gets(cpu); }
             if pc == self.mos_map.f_read { self.hostfs_mos_f_read(cpu); }
@@ -1003,7 +1048,6 @@ impl AgonMachine {
         let cycles_elapsed = self.cycle_counter.get();
         //println!("{:2} cycles, {:?}", cycles_elapsed, ez80::disassembler::disassemble(self, cpu, None, pc, pc+1));
 
-        // assumes instruction took 2 cycles...
         for t in &mut self.prt_timers {
             t.apply_ticks(cycles_elapsed as u16);
         }
@@ -1103,7 +1147,7 @@ impl AgonMachine {
                 }
 
                 for i in 0..ONCHIP_RAM_SIZE {
-                    self.onchip_mem[i as usize] = rand::thread_rng().gen_range(0..=255);
+                    self.mem_internal[i as usize] = rand::thread_rng().gen_range(0..=255);
                 }
             }
             RamInit::Zero => {}
@@ -1112,6 +1156,7 @@ impl AgonMachine {
         self.load_mos();
 
         cpu.state.set_pc(0);
+        //cpu.set_trace(true);
 
         let cycles_per_ms: u64 = self.clockspeed_hz / 1000;
         let mut timeslice_start = std::time::Instant::now();

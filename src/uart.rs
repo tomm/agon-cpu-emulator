@@ -13,12 +13,14 @@ pub struct Uart {
     pub lctl: u8, // lctl & 0x80 enables access to baud rate generator
                   // registers where rbr/thr and ier are normally accessed
     pub brg_div: u16,
+    // scratch pad register
+    pub spr: u8,
 }
 
 impl Uart {
     pub fn new(chan: Option<(Sender<u8>, Receiver<u8>)>) -> Self {
         Uart {
-            ier: 0, fctl: 0, lctl: 0, brg_div: 2, chan, rx_buf: None
+            ier: 0, fctl: 0, lctl: 0, brg_div: 2, spr: 0, chan, rx_buf: None
         }
     }
 
