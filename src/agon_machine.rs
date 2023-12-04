@@ -156,11 +156,14 @@ impl Machine for AgonMachine {
             0xc3 => self.uart0.lctl,
             0xc5 => {
                 match self.uart0.maybe_fill_rx_buf() {
-                    Some(_) => 0x41,
-                    None => 0x40
+                    Some(_) => 0x61,
+                    None => 0x60
                 }
                 // UART_LSR_ETX		EQU 	%40 ; Transmit empty (can send)
                 // UART_LSR_RDY		EQU	%01		; Data ready (can receive)
+                //
+                // 0x20 = TRHE (fifo / transmit  holding register empty)
+                // 0x40 = TEMT (fifo / transmit holding register empty & transmitter idle)
             }
             0xc6 => 0x10, // uart modem status register: CTS
             0xc7 => self.uart0.spr,

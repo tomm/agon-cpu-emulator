@@ -12,6 +12,6 @@ repository = "https://github.com/tomm/agon-cpu-emulator"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ez80 = { git = "https://github.com/tomm/ez80.git", rev="fed93d21942d0c261ef62f9e712ce4b17096c432"}
+ez80 = { git = "https://github.com/tomm/ez80.git", rev="64558c2acda1464248193f2f10804c2765b7478a"}
 #ez80 = { path = "../ez80" }
 rand = "*"
