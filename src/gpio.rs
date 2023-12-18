@@ -51,6 +51,24 @@ impl Gpio {
         mode
     }
     
+    pub fn get_ddr(&self) -> u8 { self.ddr }
+    pub fn get_alt1(&self) -> u8 { self.alt1 }
+    pub fn get_alt2(&self) -> u8 { self.alt2 }
+    pub fn set_ddr(&mut self, val: u8) {
+        let modified = self.ddr ^ val;
+        self.ddr = val;
+        self.interrupt_due &= !modified;
+    }
+    pub fn set_alt1(&mut self, val: u8) {
+        let modified = self.ddr ^ val;
+        self.alt1 = val;
+        self.interrupt_due &= !modified;
+    }
+    pub fn set_alt2(&mut self, val: u8) {
+        let modified = self.ddr ^ val;
+        self.alt2 = val;
+        self.interrupt_due &= !modified;
+    }
 
     pub fn get_dr(&self) -> u8 {
         self.io_level

@@ -117,19 +117,19 @@ impl Machine for AgonMachine {
             0x91 => self.prt_timers[5].read_counter_high(),
 
             0x9a => { let gpios = self.gpios.lock().unwrap(); gpios.b.get_dr() }
-            0x9b => { let gpios = self.gpios.lock().unwrap(); gpios.b.ddr }
-            0x9c => { let gpios = self.gpios.lock().unwrap(); gpios.b.alt1 }
-            0x9d => { let gpios = self.gpios.lock().unwrap(); gpios.b.alt2 }
+            0x9b => { let gpios = self.gpios.lock().unwrap(); gpios.b.get_ddr() }
+            0x9c => { let gpios = self.gpios.lock().unwrap(); gpios.b.get_alt1() }
+            0x9d => { let gpios = self.gpios.lock().unwrap(); gpios.b.get_alt2() }
 
             0x9e => { let gpios = self.gpios.lock().unwrap(); gpios.c.get_dr() }
-            0x9f => { let gpios = self.gpios.lock().unwrap(); gpios.c.ddr }
-            0xa0 => { let gpios = self.gpios.lock().unwrap(); gpios.c.alt1 }
-            0xa1 => { let gpios = self.gpios.lock().unwrap(); gpios.c.alt2 }
+            0x9f => { let gpios = self.gpios.lock().unwrap(); gpios.c.get_ddr() }
+            0xa0 => { let gpios = self.gpios.lock().unwrap(); gpios.c.get_alt1() }
+            0xa1 => { let gpios = self.gpios.lock().unwrap(); gpios.c.get_alt2() }
 
             0xa2 => { let gpios = self.gpios.lock().unwrap(); gpios.d.get_dr() }
-            0xa3 => { let gpios = self.gpios.lock().unwrap(); gpios.d.ddr }
-            0xa4 => { let gpios = self.gpios.lock().unwrap(); gpios.d.alt1 }
-            0xa5 => { let gpios = self.gpios.lock().unwrap(); gpios.d.alt2 }
+            0xa3 => { let gpios = self.gpios.lock().unwrap(); gpios.d.get_ddr() }
+            0xa4 => { let gpios = self.gpios.lock().unwrap(); gpios.d.get_alt1() }
+            0xa5 => { let gpios = self.gpios.lock().unwrap(); gpios.d.get_alt2() }
 
             0xb4 => {
                 if self.onchip_mem_enable { 0x80 } else { 0 }
@@ -230,19 +230,19 @@ impl Machine for AgonMachine {
             0x91 => self.prt_timers[5].write_reload_high(value),
 
             0x9a => { let mut gpios = self.gpios.lock().unwrap(); gpios.b.set_dr(value); gpios.b.update(); }
-            0x9b => { let mut gpios = self.gpios.lock().unwrap(); gpios.b.ddr = value; gpios.b.update(); }
-            0x9c => { let mut gpios = self.gpios.lock().unwrap(); gpios.b.alt1 = value; gpios.b.update(); }
-            0x9d => { let mut gpios = self.gpios.lock().unwrap(); gpios.b.alt2 = value; gpios.b.update(); }
+            0x9b => { let mut gpios = self.gpios.lock().unwrap(); gpios.b.set_ddr(value); gpios.b.update(); }
+            0x9c => { let mut gpios = self.gpios.lock().unwrap(); gpios.b.set_alt1(value); gpios.b.update(); }
+            0x9d => { let mut gpios = self.gpios.lock().unwrap(); gpios.b.set_alt2(value); gpios.b.update(); }
 
             0x9e => { let mut gpios = self.gpios.lock().unwrap(); gpios.c.set_dr(value); gpios.c.update(); }
-            0x9f => { let mut gpios = self.gpios.lock().unwrap(); gpios.c.ddr = value; gpios.c.update(); }
-            0xa0 => { let mut gpios = self.gpios.lock().unwrap(); gpios.c.alt1 = value; gpios.c.update(); }
-            0xa1 => { let mut gpios = self.gpios.lock().unwrap(); gpios.c.alt2 = value; gpios.c.update(); }
+            0x9f => { let mut gpios = self.gpios.lock().unwrap(); gpios.c.set_ddr(value); gpios.c.update(); }
+            0xa0 => { let mut gpios = self.gpios.lock().unwrap(); gpios.c.set_alt1(value); gpios.c.update(); }
+            0xa1 => { let mut gpios = self.gpios.lock().unwrap(); gpios.c.set_alt2(value); gpios.c.update(); }
 
             0xa2 => { let mut gpios = self.gpios.lock().unwrap(); gpios.d.set_dr(value); gpios.d.update(); }
-            0xa3 => { let mut gpios = self.gpios.lock().unwrap(); gpios.d.ddr = value; gpios.d.update(); }
-            0xa4 => { let mut gpios = self.gpios.lock().unwrap(); gpios.d.alt1 = value; gpios.d.update(); }
-            0xa5 => { let mut gpios = self.gpios.lock().unwrap(); gpios.d.alt2 = value; gpios.d.update(); }
+            0xa3 => { let mut gpios = self.gpios.lock().unwrap(); gpios.d.set_ddr(value); gpios.d.update(); }
+            0xa4 => { let mut gpios = self.gpios.lock().unwrap(); gpios.d.set_alt1(value); gpios.d.update(); }
+            0xa5 => { let mut gpios = self.gpios.lock().unwrap(); gpios.d.set_alt2(value); gpios.d.update(); }
 
             // chip selects
             0xa8 => self.cs0_lbr = value,
