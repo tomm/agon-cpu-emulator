@@ -42,7 +42,9 @@ pub struct AgonMachine {
     pub last_pc: u32,
     pub mem_out_of_bounds: std::cell::Cell<Option<u32>>, // address
     pub paused: bool,
-    pub cycle_counter: std::cell::Cell<u32>
+    pub cycle_counter: std::cell::Cell<u32>,
+    transmit_interrupt: bool,
+    lcr_dlab: bool
 }
 
 // a path relative to the hostfs_root_dir
@@ -132,15 +134,36 @@ impl Machine for AgonMachine {
                     None => 0
                 }
             }
+            0xc1 => {
+                // UART0_IER
+                0x00
+            }
+            0xc2 => {
+                // UART0_IIR
+                if self.transmit_interrupt == true {    
+                    self.transmit_interrupt=false;
+                    0x02   
+                }
+                else {    
+                    0x04    
+                }
+            }
             0xc5 => {
+                // UART0_LSR
                 self.maybe_fill_rx_buf();
 
+                // indicate if we have characters received from VDP via DR (data ready)
+                // we are always ready to transmit (TEMP and THRE)
                 match self.rx_buf {
-                    Some(_) => 0x41,
-                    None => 0x40
+                    Some(_) => 0b01100001, //0x41, DR (data ready) + TEMT (transmit shift empty) + THRE (transmit holding empty)
+                    None => 0b01100000 // 0x40, DR (data not ready) + TEMT (transmit shift empty) + THRE (transmit holding empty)
                 }
                 // UART_LSR_ETX		EQU 	%40 ; Transmit empty (can send)
                 // UART_LSR_RDY		EQU	%01		; Data ready (can receive)
+            }
+            0xc6 => {
+                // UART0_MSR
+                0b00010000 // UART0 clear to send
             }
             _ => {
                 //println!("IN({:02X})", address);
@@ -185,9 +208,23 @@ impl Machine for AgonMachine {
             0xb5 => {
                 self.onchip_mem_segment = value;
             }
-
+            0xc3 => {
+                self.lcr_dlab = value & 0x80 != 0;
+            }
+            0xc1 => {
+                // UART0_IER
+                if value & 0x02 != 0 {
+                    // request transmit interrupt
+                    self.transmit_interrupt = true;
+                }
+            }
             /* UART0_REG_THR - send data to VDP */
-            0xc0 => self.tx.send(value).unwrap(),
+            0xc0 => {
+                if self.lcr_dlab == false {
+                    self.tx.send(value).unwrap()
+                }
+            }
+
             _ => {
                 //println!("OUT(${:02X}) = ${:x}", address, value);
             }
@@ -237,6 +274,8 @@ impl AgonMachine {
             mos_bin: config.mos_bin,
             onchip_mem_enable: true,
             onchip_mem_segment: 0xff,
+            transmit_interrupt: false,
+            lcr_dlab: false
         }
     }
 
@@ -347,7 +386,7 @@ impl AgonMachine {
                     };
 
                     if n_read == 0 {
-                        break;
+                        break 'outer mos::FR_DISK_ERR // EOF
                     }
                     line.push(host_buf[0]);
 
@@ -372,7 +411,13 @@ impl AgonMachine {
                 mos::FR_DISK_ERR
             }
         };
-        cpu.state.reg.set24(Reg16::HL, fresult);
+        //cpu.state.reg.set24(Reg16::HL, fresult);
+        if fresult==mos::FR_OK {
+            cpu.state.reg.set24(Reg16::HL, buf);
+        }
+        else {
+            cpu.state.reg.set24(Reg16::HL, 0);
+        }
         let mut env = Environment::new(&mut cpu.state, self);
         env.subroutine_return();
     }
@@ -927,7 +972,7 @@ impl AgonMachine {
         for t in &mut self.prt_timers {
             t.apply_ticks(cycles_elapsed as u16);
         }
-
+ 
         cycles_elapsed
     }
 
@@ -939,7 +984,10 @@ impl AgonMachine {
                 let mut env = Environment::new(&mut cpu.state, self);
                 env.interrupt(0x18); // uart0_handler
             }
-
+            if self.transmit_interrupt == true {
+                let mut env = Environment::new(&mut cpu.state, self);
+                env.interrupt (0x18); // uart0_handler
+            }
             // fire vsync interrupt
             let cur_vsync_count = self.vsync_counter.load(std::sync::atomic::Ordering::Relaxed);
             if cur_vsync_count != self.last_vsync_count {
