@@ -161,6 +161,21 @@ impl DebuggerServer {
                     _ => None
                 };
                 match machine.peek(if prefix_override.is_some() { pc+1 } else { pc }) {
+                    // RST instruction at (pc)
+                    0xc7 | 0xd7 | 0xe7 | 0xf7 | 0xcf | 0xdf | 0xef | 0xff => {
+                        let addr_next = pc + (if prefix_override.is_some() { 2 } else { 1 });
+                        self.triggers.push(Trigger {
+                            address: addr_next,
+                            once: true,
+                            actions: vec![
+                                DebugCmd::Pause,
+                                DebugCmd::Message("Stepped over RST".to_string()),
+                                DebugCmd::GetState,
+                            ]
+                        });
+                        machine.paused = false;
+                        self.con.tx.send(DebugResp::IsPaused(false)).unwrap();
+                    }
                     // CALL instruction at (pc)
                     0xc4 | 0xd4 | 0xe4 | 0xf4 | 0xcc | 0xcd | 0xdc | 0xec | 0xfc => {
                         let addr_next = pc + match prefix_override {
