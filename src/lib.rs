@@ -2,6 +2,7 @@ mod agon_machine;
 mod mos;
 mod prt_timer;
 mod symbol_map;
+mod uart;
 pub mod debugger;
 pub mod gpio;
 pub use agon_machine::AgonMachine;
