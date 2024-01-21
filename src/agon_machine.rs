@@ -281,6 +281,7 @@ impl AgonMachine {
 
     #[inline]
     fn is_address_mapped(&self, address: u32) -> bool {
+        // TODO: change from hardcoded to values of CS0_xxx registers and location FLASH_ADDR_U
         address < 0x20000 || (address >= 0x40000 && address < 0xc0000)
     }
 
