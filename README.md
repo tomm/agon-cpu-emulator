@@ -4,7 +4,7 @@ An emulator of the Agon Light CPU (eZ80F92) and CPU-controlled peripherals,
 with host filesystem integration.
 
 For a complete Agon Light emulator, including the VDP (ESP32) side of the system,
-see [Agon Light Emulator](https://github.com/astralaster/agon-light-emulator),
+see [Fab Agon Emulator](https://github.com/tomm/fab-agon-emulator),
 which uses this crate combined with a graphical (SDL) Agon VDP emulator.
 
 This Agon CPU Emulator can be used stand-alone, as a text-only emulation
