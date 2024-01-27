@@ -153,6 +153,16 @@ impl Machine for AgonMachine {
                     self.uart0.ier
                 }
             }
+            0xc2 => {
+                // UART0_IIR
+                if self.uart0.ier & 0x02 != 0 {    
+                    self.uart0.ier = self.uart0.ier & 0b11111101;
+                    0x02   
+                }
+                else {    
+                    0x04    
+                }
+            }
             0xc3 => self.uart0.lctl,
             0xc5 => {
                 match self.uart0.maybe_fill_rx_buf() {
@@ -364,7 +374,7 @@ impl AgonMachine {
             onchip_mem_segment: 0xff,
             flash_addr_u: 0,
             cs0_lbr: 0,
-            cs0_ubr: 0xff,
+            cs0_ubr: 0xff
         }
     }
 
@@ -475,7 +485,7 @@ impl AgonMachine {
                     };
 
                     if n_read == 0 {
-                        break;
+                        break 'outer mos::FR_DISK_ERR // EOF
                     }
                     line.push(host_buf[0]);
 
@@ -500,7 +510,12 @@ impl AgonMachine {
                 mos::FR_DISK_ERR
             }
         };
-        cpu.state.reg.set24(Reg16::HL, fresult);
+        if fresult==mos::FR_OK {
+            cpu.state.reg.set24(Reg16::HL, buf);
+        }
+        else {
+            cpu.state.reg.set24(Reg16::HL, 0);
+        }
         let mut env = Environment::new(&mut cpu.state, self);
         env.subroutine_return();
     }
@@ -1096,13 +1111,13 @@ impl AgonMachine {
             }
 
             // fire uart interrupt
-            if self.uart0.is_rx_interrupt_enabled() && self.uart0.maybe_fill_rx_buf() != None {
+            if self.uart0.is_rx_interrupt_enabled() && self.uart0.maybe_fill_rx_buf() != None || // character(s) received
+               self.uart0.ier & 0x02 != 0 { // character(s) to send
                 let mut env = Environment::new(&mut cpu.state, self);
                 //println!("uart interrupt!");
                 env.interrupt(0x18); // uart0_handler
                 return;
             }
-
             // fire gpio interrupts
             {
                 let (b_int, c_int, d_int) = {
