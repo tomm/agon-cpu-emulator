@@ -469,7 +469,7 @@ impl AgonMachine {
     }
 
     fn hostfs_mos_f_gets(&mut self, cpu: &mut Cpu) {
-        let mut buf = self._peek24(cpu.state.sp() + 3);
+        let buf = self._peek24(cpu.state.sp() + 3);
         let max_len = self._peek24(cpu.state.sp() + 6);
         let fptr = self._peek24(cpu.state.sp() + 9);
         //eprintln!("f_gets(buf: ${:x}, len: ${:x}, fptr: ${:x})", buf, max_len, fptr);
@@ -499,11 +499,12 @@ impl AgonMachine {
 
                 // save file position to FIL.fptr U32
                 self._poke24(fptr + mos::FIL_MEMBER_FPTR, fpos as u32);
+                let mut buf2 = buf;
                 for b in line {
-                    self.poke(buf, b);
-                    buf += 1;
+                    self.poke(buf2, b);
+                    buf2 += 1;
                 }
-                self.poke(buf, 0);
+                self.poke(buf2, 0);
 
                 mos::FR_OK
             } else {
