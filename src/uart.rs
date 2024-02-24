@@ -1,8 +1,9 @@
-use std::sync::mpsc::{Sender, Receiver};
-use std::sync::mpsc;
+pub type SendFn = Box<dyn Fn(u8)>;
+pub type RecvFn = Box<dyn Fn() -> Option<u8>>;
 
 pub struct Uart {
-    chan: Option<(Sender<u8>, Receiver<u8>)>,
+    send_fn: Option<SendFn>,
+    recv_fn: Option<RecvFn>,
     rx_buf: Option<u8>,
 
     // interrupt enable register
@@ -18,20 +19,17 @@ pub struct Uart {
 }
 
 impl Uart {
-    pub fn new(chan: Option<(Sender<u8>, Receiver<u8>)>) -> Self {
+    pub fn new(send_fn: Option<SendFn>, recv_fn: Option<RecvFn>) -> Self {
         Uart {
-            ier: 0, fctl: 0, lctl: 0, brg_div: 2, spr: 0, chan, rx_buf: None
+            send_fn, recv_fn,
+            ier: 0, fctl: 0, lctl: 0, brg_div: 2, spr: 0, rx_buf: None
         }
     }
 
     pub fn maybe_fill_rx_buf(&mut self) -> Option<u8> {
-        if let Some((ref _tx, ref rx)) = self.chan {
+        if let Some(ref rx) = self.recv_fn {
             if self.rx_buf == None {
-                self.rx_buf = match rx.try_recv() {
-                    Ok(data) => Some(data),
-                    Err(mpsc::TryRecvError::Disconnected) => panic!(),
-                    Err(mpsc::TryRecvError::Empty) => None
-                }
+                self.rx_buf = rx();
             }
             self.rx_buf
         } else {
@@ -53,8 +51,8 @@ impl Uart {
     }
 
     pub fn send_byte(&mut self, value: u8) {
-        if let Some((ref tx, ref _rx)) = self.chan {
-            tx.send(value).unwrap();
+        if let Some(ref tx) = self.send_fn {
+            tx(value);
         }
     }
 

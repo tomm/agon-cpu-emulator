@@ -1,5 +1,4 @@
 use ez80::*;
-use std::sync::mpsc::{Sender, Receiver};
 use std::collections::HashMap;
 use std::io::{ Seek, SeekFrom, Read, Write };
 use crate::{ mos, debugger, prt_timer, gpio, uart };
@@ -330,8 +329,8 @@ impl Machine for AgonMachine {
 }
 
 pub struct AgonMachineConfig {
-    pub to_vdp: Sender<u8>,
-    pub from_vdp: Receiver<u8>,
+    pub to_vdp: uart::SendFn,
+    pub from_vdp: uart::RecvFn,
     pub soft_reset: Arc<std::sync::atomic::AtomicBool>,
     pub clockspeed_hz: u64,
     pub ram_init: RamInit,
@@ -345,8 +344,8 @@ impl AgonMachine {
             mem_rom: [0; ROM_SIZE],
             mem_external: [0; EXTERNAL_RAM_SIZE],
             mem_internal: [0; ONCHIP_RAM_SIZE as usize],
-            uart0: uart::Uart::new(Some((config.to_vdp, config.from_vdp))),
-            uart1: uart::Uart::new(None),
+            uart0: uart::Uart::new(Some(config.to_vdp), Some(config.from_vdp)),
+            uart1: uart::Uart::new(None, None),
             open_files: HashMap::new(),
             open_dirs: HashMap::new(),
             enable_hostfs: true,
