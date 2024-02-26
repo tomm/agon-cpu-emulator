@@ -21,6 +21,7 @@ pub const FILINFO_MEMBER_FNAME_256BYTES: u32 = 22;
 pub const FA_WRITE: u32 = 2;
 pub const FA_CREATE_NEW: u32 = 4;
 pub const FA_CREATE_ALWAYS: u32 = 8;
+pub const FA_SEEKEND: u32 = 0x20;
 
 #[derive(Clone, Default)]
 pub struct MosMap {
