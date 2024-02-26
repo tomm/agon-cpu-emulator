@@ -1000,8 +1000,9 @@ impl AgonMachine {
 
                 // save the size in the FIL structure
                 let mut file_len = f.seek(SeekFrom::End(0)).unwrap();
-                if (mode & mos::FA_SEEKEND != 0)
+                if mode & mos::FA_SEEKEND == 0 {
                     f.seek(SeekFrom::Start(0)).unwrap();
+                }
 
                 // XXX don't support files larger than 512KiB
                 file_len = file_len.min(1<<19);
@@ -1020,7 +1021,6 @@ impl AgonMachine {
                     _ => cpu.state.reg.set24(Reg16::HL, 1)
                 }
             }
-
         }
         Environment::new(&mut cpu.state, self).subroutine_return();
     }
