@@ -181,11 +181,13 @@ fn main() {
     let _cpu_thread = std::thread::spawn(move || {
         let mut machine = AgonMachine::new(AgonMachineConfig {
             ram_init: RamInit::Random,
-            to_vdp: Box::new(move |byte| to_vdp.send(byte).unwrap()),
-            from_vdp: Box::new(move || match from_vdp.try_recv() {
+            uart0_send: Box::new(move |byte| to_vdp.send(byte).unwrap()),
+            uart0_recv: Box::new(move || match from_vdp.try_recv() {
                 Ok(data) => Some(data),
                 Err(..) => None
             }),
+            uart1_send: Box::new(move |_| ()),
+            uart1_recv: Box::new(move || None),
             soft_reset,
             gpios: gpios_,
             clockspeed_hz: if unlimited_cpu { std::u64::MAX } else { 18_432_000 },

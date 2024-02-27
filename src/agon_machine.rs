@@ -163,17 +163,7 @@ impl Machine for AgonMachine {
                 }
             }
             0xc3 => self.uart0.lctl,
-            0xc5 => {
-                match self.uart0.maybe_fill_rx_buf() {
-                    Some(_) => 0x61,
-                    None => 0x60
-                }
-                // UART_LSR_ETX		EQU 	%40 ; Transmit empty (can send)
-                // UART_LSR_RDY		EQU	%01		; Data ready (can receive)
-                //
-                // 0x20 = TRHE (fifo / transmit  holding register empty)
-                // 0x40 = TEMT (fifo / transmit holding register empty & transmitter idle)
-            }
+            0xc5 => self.uart0.read_lsr(),
             0xc6 => 0x10, // uart modem status register: CTS
             0xc7 => self.uart0.spr,
 
@@ -192,15 +182,19 @@ impl Machine for AgonMachine {
                     self.uart1.ier
                 }
             }
-            0xd3 => self.uart1.lctl,
-            0xd5 => {
-                match self.uart1.maybe_fill_rx_buf() {
-                    Some(_) => 0x41,
-                    None => 0x40
+            0xd2 => {
+                // UART1_IIR
+                if self.uart1.ier & 0x02 != 0 {    
+                    self.uart1.ier = self.uart1.ier & 0b11111101;
+                    0x02   
                 }
-                // UART_LSR_ETX		EQU 	%40 ; Transmit empty (can send)
-                // UART_LSR_RDY		EQU	%01		; Data ready (can receive)
+                else {    
+                    0x04    
+                }
             }
+            0xd3 => self.uart1.lctl,
+            0xd5 => self.uart1.read_lsr(),
+            0xd6 => 0x10, // uart modem status register: CTS
             0xd7 => self.uart1.spr,
 
             0xf7 => self.flash_addr_u,
@@ -293,7 +287,7 @@ impl Machine for AgonMachine {
                     self.uart0.ier = value;
                 }
             }
-            0xc2 => self.uart0.fctl = value,
+            0xc2 => self.uart0.write_fctl(value),
             0xc3 => self.uart0.lctl = value,
             0xc7 => self.uart0.spr = value,
 
@@ -315,7 +309,7 @@ impl Machine for AgonMachine {
                     self.uart1.ier = value;
                 }
             }
-            0xd2 => self.uart1.fctl = value,
+            0xd2 => self.uart1.write_fctl(value),
             0xd3 => self.uart1.lctl = value,
             0xd7 => self.uart1.spr = value,
 
@@ -329,8 +323,10 @@ impl Machine for AgonMachine {
 }
 
 pub struct AgonMachineConfig {
-    pub to_vdp: uart::SendFn,
-    pub from_vdp: uart::RecvFn,
+    pub uart0_send: uart::SendFn,
+    pub uart0_recv: uart::RecvFn,
+    pub uart1_send: uart::SendFn,
+    pub uart1_recv: uart::RecvFn,
     pub soft_reset: Arc<std::sync::atomic::AtomicBool>,
     pub clockspeed_hz: u64,
     pub ram_init: RamInit,
@@ -344,8 +340,8 @@ impl AgonMachine {
             mem_rom: [0; ROM_SIZE],
             mem_external: [0; EXTERNAL_RAM_SIZE],
             mem_internal: [0; ONCHIP_RAM_SIZE as usize],
-            uart0: uart::Uart::new(Some(config.to_vdp), Some(config.from_vdp)),
-            uart1: uart::Uart::new(None, None),
+            uart0: uart::Uart::new(config.uart0_send, config.uart0_recv),
+            uart1: uart::Uart::new(config.uart1_send, config.uart1_recv),
             open_files: HashMap::new(),
             open_dirs: HashMap::new(),
             enable_hostfs: true,
@@ -1069,6 +1065,8 @@ impl AgonMachine {
         for t in &mut self.prt_timers {
             t.apply_ticks(cycles_elapsed as u16);
         }
+
+        self.uart0.apply_ticks(cycles_elapsed as i32);
 
         cycles_elapsed
     }
