@@ -159,6 +159,7 @@ pub struct DummySerialLink {}
 impl SerialLink for DummySerialLink {
     fn send(&mut self, _byte: u8) {}
     fn recv(&mut self) -> Option<u8> { None }
+    fn read_clear_to_send(&mut self) -> bool { true }
 }
 
 pub struct ChannelSerialLink {
@@ -173,6 +174,7 @@ impl SerialLink for ChannelSerialLink {
             Err(..) => None
         }
     }
+    fn read_clear_to_send(&mut self) -> bool { true }
 }
 
 fn main() {

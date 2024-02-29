@@ -3,6 +3,7 @@ const FCTL_FIFOEN: u8 = 0x1;
 pub trait SerialLink {
     fn send(&mut self, byte: u8);
     fn recv(&mut self) -> Option<u8>;
+    fn read_clear_to_send(&mut self) -> bool;
 }
 
 pub struct Uart {
@@ -89,6 +90,10 @@ impl Uart {
 
     pub fn write_fctl(&mut self, val: u8) {
         self.fctl = val;
+    }
+
+    pub fn read_modem_status_register(&mut self) -> u8 {
+        if self.link.read_clear_to_send() { 0x10 } else { 0 }
     }
 
     /*

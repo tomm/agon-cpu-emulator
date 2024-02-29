@@ -120,12 +120,22 @@ impl Machine for AgonMachine {
             0x9c => { let gpios = self.gpios.lock().unwrap(); gpios.b.get_alt1() }
             0x9d => { let gpios = self.gpios.lock().unwrap(); gpios.b.get_alt2() }
 
-            0x9e => { let gpios = self.gpios.lock().unwrap(); gpios.c.get_dr() }
+            0x9e => {
+                let gpios = self.gpios.lock().unwrap();
+                /* set bit 3 of gpio if uart1 is NOT CTS */
+                let uart1_cts = if self.uart1.read_modem_status_register() & 0x10 != 0 { 0 } else { 8 };
+                gpios.c.get_dr() | uart1_cts
+            }
             0x9f => { let gpios = self.gpios.lock().unwrap(); gpios.c.get_ddr() }
             0xa0 => { let gpios = self.gpios.lock().unwrap(); gpios.c.get_alt1() }
             0xa1 => { let gpios = self.gpios.lock().unwrap(); gpios.c.get_alt2() }
 
-            0xa2 => { let gpios = self.gpios.lock().unwrap(); gpios.d.get_dr() }
+            0xa2 => {
+                let gpios = self.gpios.lock().unwrap();
+                /* set bit 3 of gpio if uart0 is NOT CTS */
+                let uart0_cts = if self.uart0.read_modem_status_register() & 0x10 != 0 { 0 } else { 8 };
+                gpios.d.get_dr() | uart0_cts
+            }
             0xa3 => { let gpios = self.gpios.lock().unwrap(); gpios.d.get_ddr() }
             0xa4 => { let gpios = self.gpios.lock().unwrap(); gpios.d.get_alt1() }
             0xa5 => { let gpios = self.gpios.lock().unwrap(); gpios.d.get_alt2() }
@@ -164,7 +174,7 @@ impl Machine for AgonMachine {
             }
             0xc3 => self.uart0.lctl,
             0xc5 => self.uart0.read_lsr(),
-            0xc6 => 0x10, // uart modem status register: CTS
+            0xc6 => self.uart0.read_modem_status_register(),
             0xc7 => self.uart0.spr,
 
             /* uart1 is kindof useless in the emulator, but ... */
@@ -194,7 +204,7 @@ impl Machine for AgonMachine {
             }
             0xd3 => self.uart1.lctl,
             0xd5 => self.uart1.read_lsr(),
-            0xd6 => 0x10, // uart modem status register: CTS
+            0xd6 => self.uart1.read_modem_status_register(),
             0xd7 => self.uart1.spr,
 
             0xf7 => self.flash_addr_u,
