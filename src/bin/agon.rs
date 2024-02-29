@@ -1,4 +1,4 @@
-use agon_cpu_emulator::{ RamInit, AgonMachine, AgonMachineConfig, gpio };
+use agon_cpu_emulator::{ SerialLink, RamInit, AgonMachine, AgonMachineConfig, gpio };
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
 use std::io::{ self, BufRead, Write };
@@ -155,6 +155,26 @@ fn start_vdp(tx_vdp_to_ez80: Sender<u8>, rx_ez80_to_vdp: Receiver<u8>,
     }
 }
 
+pub struct DummySerialLink {}
+impl SerialLink for DummySerialLink {
+    fn send(&mut self, _byte: u8) {}
+    fn recv(&mut self) -> Option<u8> { None }
+}
+
+pub struct ChannelSerialLink {
+    pub sender: Sender<u8>,
+    pub receiver: Receiver<u8>
+}
+impl SerialLink for ChannelSerialLink {
+    fn send(&mut self, byte: u8) { self.sender.send(byte).unwrap(); }
+    fn recv(&mut self) -> Option<u8> {
+        match self.receiver.try_recv() {
+            Ok(data) => Some(data),
+            Err(..) => None
+        }
+    }
+}
+
 fn main() {
     let (tx_vdp_to_ez80, from_vdp): (Sender<u8>, Receiver<u8>) = mpsc::channel();
     let (to_vdp, rx_ez80_to_vdp): (Sender<u8>, Receiver<u8>) = mpsc::channel();
@@ -181,13 +201,8 @@ fn main() {
     let _cpu_thread = std::thread::spawn(move || {
         let mut machine = AgonMachine::new(AgonMachineConfig {
             ram_init: RamInit::Random,
-            uart0_send: Box::new(move |byte| to_vdp.send(byte).unwrap()),
-            uart0_recv: Box::new(move || match from_vdp.try_recv() {
-                Ok(data) => Some(data),
-                Err(..) => None
-            }),
-            uart1_send: Box::new(move |_| ()),
-            uart1_recv: Box::new(move || None),
+            uart0_link: Box::new(ChannelSerialLink { sender: to_vdp, receiver: from_vdp }),
+            uart1_link: Box::new(DummySerialLink {}),
             soft_reset,
             gpios: gpios_,
             clockspeed_hz: if unlimited_cpu { std::u64::MAX } else { 18_432_000 },

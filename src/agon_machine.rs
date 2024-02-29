@@ -323,10 +323,8 @@ impl Machine for AgonMachine {
 }
 
 pub struct AgonMachineConfig {
-    pub uart0_send: uart::SendFn,
-    pub uart0_recv: uart::RecvFn,
-    pub uart1_send: uart::SendFn,
-    pub uart1_recv: uart::RecvFn,
+    pub uart0_link: Box<dyn uart::SerialLink>,
+    pub uart1_link: Box<dyn uart::SerialLink>,
     pub soft_reset: Arc<std::sync::atomic::AtomicBool>,
     pub clockspeed_hz: u64,
     pub ram_init: RamInit,
@@ -340,8 +338,8 @@ impl AgonMachine {
             mem_rom: [0; ROM_SIZE],
             mem_external: [0; EXTERNAL_RAM_SIZE],
             mem_internal: [0; ONCHIP_RAM_SIZE as usize],
-            uart0: uart::Uart::new(config.uart0_send, config.uart0_recv),
-            uart1: uart::Uart::new(config.uart1_send, config.uart1_recv),
+            uart0: uart::Uart::new(config.uart0_link),
+            uart1: uart::Uart::new(config.uart1_link),
             open_files: HashMap::new(),
             open_dirs: HashMap::new(),
             enable_hostfs: true,

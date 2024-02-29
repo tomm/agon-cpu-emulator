@@ -1,11 +1,12 @@
-pub type SendFn = Box<dyn Fn(u8)>;
-pub type RecvFn = Box<dyn Fn() -> Option<u8>>;
-
 const FCTL_FIFOEN: u8 = 0x1;
 
+pub trait SerialLink {
+    fn send(&mut self, byte: u8);
+    fn recv(&mut self) -> Option<u8>;
+}
+
 pub struct Uart {
-    send_fn: SendFn,
-    recv_fn: RecvFn,
+    link: Box<dyn SerialLink>,
     rx_buf: Option<u8>,
 
     /* number of clock cycles before a byte can be sent again */
@@ -26,9 +27,9 @@ pub struct Uart {
 }
 
 impl Uart {
-    pub fn new(send_fn: SendFn, recv_fn: RecvFn) -> Self {
+    pub fn new(link: Box<dyn SerialLink>) -> Self {
         Uart {
-            send_fn, recv_fn,
+            link,
             transmit_cooldown: 0,
             tx_fifo: vec![],
             ier: 0, fctl: 0, lctl: 0, brg_div: 2, spr: 0, rx_buf: None
@@ -41,7 +42,7 @@ impl Uart {
             if !self.tx_fifo.is_empty() {
                 let val = self.tx_fifo.remove(0);
                 // actually send
-                (*self.send_fn)(val);
+                self.link.send(val);
                 self.transmit_cooldown += self.brg_div as i32 * 16 * 9; /* XXX 9 = 8bits data, 1 bit parity */
             }
         }
@@ -58,7 +59,7 @@ impl Uart {
 
     pub fn maybe_fill_rx_buf(&mut self) -> Option<u8> {
         if self.rx_buf == None {
-            self.rx_buf = (*self.recv_fn)();
+            self.rx_buf = self.link.recv();
         }
         self.rx_buf
     }

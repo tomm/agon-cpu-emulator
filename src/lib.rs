@@ -5,6 +5,7 @@ mod symbol_map;
 mod uart;
 pub mod debugger;
 pub mod gpio;
+pub use uart::SerialLink;
 pub use agon_machine::AgonMachine;
 pub use agon_machine::AgonMachineConfig;
 pub use agon_machine::RamInit;
