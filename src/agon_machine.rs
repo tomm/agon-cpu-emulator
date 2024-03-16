@@ -458,6 +458,24 @@ impl AgonMachine {
         env.subroutine_return();
     }
 
+    fn hostfs_mos_f_getcwd(&mut self, cpu: &mut Cpu) {
+        let mut buf = self._peek24(cpu.state.sp() + 3);
+        let cwd = self.mos_current_dir.0.clone();
+        self.poke(buf, 47); // leading slash
+        buf += 1;
+        for b in cwd.to_str().unwrap_or("").bytes() {
+            self.poke(buf, b);
+            buf += 1;
+        }
+        self.poke(buf, 0);
+
+        // success
+        cpu.state.reg.set24(Reg16::HL, 0); // success
+
+        let mut env = Environment::new(&mut cpu.state, self);
+        env.subroutine_return();
+    }
+
     fn hostfs_mos_f_close(&mut self, cpu: &mut Cpu) {
         let fptr = self._peek24(cpu.state.sp() + 3);
         //eprintln!("f_close(${:x})", fptr);
@@ -1045,6 +1063,7 @@ impl AgonMachine {
             if pc == self.mos_map.f_chdir { self.hostfs_mos_f_chdir(cpu); }
             if pc == self.mos_map.f_closedir { self.hostfs_mos_f_closedir(cpu); }
             if pc == self.mos_map.f_getlabel { self.hostfs_mos_f_getlabel(cpu); }
+            if pc == self.mos_map.f_getcwd { self.hostfs_mos_f_getcwd(cpu); }
             if pc == self.mos_map.f_lseek { self.hostfs_mos_f_lseek(cpu); }
             if pc == self.mos_map.f_mkdir { self.hostfs_mos_f_mkdir(cpu); }
             if pc == self.mos_map.f_mount { self.hostfs_mos_f_mount(cpu); }
@@ -1058,7 +1077,6 @@ impl AgonMachine {
             //if pc == self.mos_map._f_puts { eprintln!("Un-trapped fatfs call: f_puts"); }
             //if pc == self.mos_map._f_setlabel { eprintln!("Un-trapped fatfs call: f_setlabel"); }
             //if pc == self.mos_map._f_chdrive { eprintln!("Un-trapped fatfs call: f_chdrive"); }
-            //if pc == self.mos_map._f_getcwd { eprintln!("Un-trapped fatfs call: f_getcwd"); }
             //if pc == self.mos_map._f_getfree { eprintln!("Un-trapped fatfs call: f_getfree"); }
             //if pc == self.mos_map._f_printf { eprintln!("Un-trapped fatfs call: f_printf"); }
             //if pc == self.mos_map._f_sync { eprintln!("Un-trapped fatfs call: f_sync"); }

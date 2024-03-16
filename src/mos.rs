@@ -28,7 +28,7 @@ pub struct MosMap {
     pub _f_chdrive: u32,
     pub f_close: u32,
     pub f_closedir: u32,
-    pub _f_getcwd: u32,
+    pub f_getcwd: u32,
     pub _f_getfree: u32,
     pub f_getlabel: u32,
     pub f_gets: u32,
@@ -60,7 +60,7 @@ impl MosMap {
         mos_map._f_chdrive = *(map.get("_f_chdrive").ok_or(err)?);
         mos_map.f_close = *(map.get("_f_close").ok_or(err)?);
         mos_map.f_closedir = *(map.get("_f_closedir").ok_or(err)?);
-        mos_map._f_getcwd = *(map.get("_f_getcwd").ok_or(err)?);
+        mos_map.f_getcwd = *(map.get("_f_getcwd").ok_or(err)?);
         mos_map._f_getfree = *(map.get("_f_getfree").ok_or(err)?);
         mos_map.f_getlabel = *(map.get("_f_getlabel").ok_or(err)?);
         mos_map.f_gets = *(map.get("_f_gets").ok_or(err)?);
