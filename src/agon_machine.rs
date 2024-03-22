@@ -1113,9 +1113,8 @@ impl AgonMachine {
 
     #[inline]
     pub fn do_interrupts(&mut self, cpu: &mut Cpu) {
-        if cpu.state.instructions_executed % 64 == 0 && cpu.state.reg.get_iff1() {
-            // Interrupts in priority order
-
+        // Not an interrupt. Is a soft-reset pending?
+        if cpu.state.instructions_executed & 0xff == 0 {
             // perform a soft reset if requested
             if self.soft_reset.load(std::sync::atomic::Ordering::Relaxed) {
                 // MOS soft reset code always runs from ADL mode.
@@ -1126,7 +1125,10 @@ impl AgonMachine {
                 self.soft_reset.store(false, std::sync::atomic::Ordering::Relaxed);
                 return;
             }
+        }
 
+        if cpu.state.instructions_executed & 0x3f == 0 && cpu.state.reg.get_iff1() {
+            // Interrupts in priority order
             for i in 0..self.prt_timers.len() {
                 if self.prt_timers[i].irq_due() {
                     Environment::new(&mut cpu.state, self).interrupt(0xa + 2*(i as u32));
