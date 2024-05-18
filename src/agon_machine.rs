@@ -682,13 +682,14 @@ impl AgonMachine {
         let mut fil_time = 0u16;
 
         let raw_mtime = filetime::FileTime::from_last_modification_time(&metadata);
-        if let Some(mtime) = chrono::DateTime::from_timestamp(raw_mtime.unix_seconds(), 0) {
-            fil_date |= ((mtime.year() - 1980) << 9) as u16;
-            fil_date |= ((mtime.month()) << 5) as u16;
-            fil_date |= mtime.day() as u16;
-            fil_time |= (mtime.hour() << 11) as u16;
-            fil_time |= (mtime.minute() << 5) as u16;
-            fil_time |= mtime.second() as u16;
+        if let Some(utc_mtime) = chrono::DateTime::from_timestamp(raw_mtime.unix_seconds(), 0) {
+            let local_mtime = utc_mtime.with_timezone(&chrono::Local::now().timezone());
+            fil_date |= ((local_mtime.year() - 1980) << 9) as u16;
+            fil_date |= ((local_mtime.month()) << 5) as u16;
+            fil_date |= local_mtime.day() as u16;
+            fil_time |= (local_mtime.hour() << 11) as u16;
+            fil_time |= (local_mtime.minute() << 5) as u16;
+            fil_time |= local_mtime.second() as u16;
         }
 
         self.poke(z80_filinfo_ptr + mos::FILINFO_MEMBER_FDATE_U16, fil_date as u8);
