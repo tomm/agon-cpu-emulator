@@ -1,6 +1,6 @@
 [package]
 name = "agon-cpu-emulator"
-version = "0.8.2"
+version = "0.8.3"
 edition = "2021"
 authors = ["Tom Morton <tomm8086@gmail.com>"]
 license = "BSD-3-Clause"
@@ -15,3 +15,5 @@ repository = "https://github.com/tomm/agon-cpu-emulator"
 ez80 = { git = "https://github.com/tomm/ez80.git", rev="64558c2acda1464248193f2f10804c2765b7478a"}
 #ez80 = { path = "../ez80" }
 rand = "*"
+filetime = "0.2"
+chrono = "0.4.38"

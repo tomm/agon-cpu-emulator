@@ -4,6 +4,7 @@ use std::io::{ Seek, SeekFrom, Read, Write };
 use crate::{ mos, debugger, prt_timer, gpio, uart };
 use std::sync::{ Arc, Mutex };
 use rand::Rng;
+use chrono::{ Datelike, Timelike };
 
 const ROM_SIZE: usize = 0x20000; // 128 KiB flash
 const EXTERNAL_RAM_SIZE: usize = 0x80000; // 512 KiB
@@ -676,7 +677,24 @@ impl AgonMachine {
             self.poke(z80_filinfo_ptr + mos::FILINFO_MEMBER_FATTRIB_U8, 0x10 /* AM_DIR */);
         }
 
-        // TODO set fdate, ftime
+        // set fdate, ftime
+        let mut fil_date = 0u16;
+        let mut fil_time = 0u16;
+
+        let raw_mtime = filetime::FileTime::from_last_modification_time(&metadata);
+        if let Some(mtime) = chrono::DateTime::from_timestamp(raw_mtime.unix_seconds(), 0) {
+            fil_date |= ((mtime.year() - 1980) << 9) as u16;
+            fil_date |= ((mtime.month()) << 5) as u16;
+            fil_date |= mtime.day() as u16;
+            fil_time |= (mtime.hour() << 11) as u16;
+            fil_time |= (mtime.minute() << 5) as u16;
+            fil_time |= mtime.second() as u16;
+        }
+
+        self.poke(z80_filinfo_ptr + mos::FILINFO_MEMBER_FDATE_U16, fil_date as u8);
+        self.poke(z80_filinfo_ptr + mos::FILINFO_MEMBER_FDATE_U16 + 1, (fil_date >> 8) as u8);
+        self.poke(z80_filinfo_ptr + mos::FILINFO_MEMBER_FTIME_U16, fil_time as u8);
+        self.poke(z80_filinfo_ptr + mos::FILINFO_MEMBER_FTIME_U16 + 1, (fil_time >> 8) as u8);
     }
 
     fn hostfs_mos_f_readdir(&mut self, cpu: &mut Cpu) {
