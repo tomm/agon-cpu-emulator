@@ -38,6 +38,7 @@ fn handle_vdp(tx_to_ez80: &Sender<u8>, rx_from_ez80: &Receiver<u8>, vdp_terminal
                 // one zero byte sent before everything else. real VDP ignores
                 0 => {},
                 1 => {},
+                7 => {}, // bell
                 9 => {}, // cursor right
                 0xa => println!(),
                 0xd => {},
