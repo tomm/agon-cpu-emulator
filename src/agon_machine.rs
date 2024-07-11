@@ -1071,43 +1071,42 @@ impl AgonMachine {
         if let Ok(metadata) = std::fs::metadata(self.mos_path_to_host_path(&path)) {
             if !metadata.is_file() {
                 cpu.state.reg.set24(Reg16::HL, 4);
-            } else {
-                //eprintln!("f_open(${:x}, \"{}\", {})", fptr, &filename, mode);
-                match std::fs::File::options()
-                    .read(true)
-                    .write(mode & mos::FA_WRITE != 0)
-                    .create((mode & mos::FA_CREATE_NEW != 0) || (mode & mos::FA_CREATE_ALWAYS != 0))
-                    .truncate(mode & mos::FA_CREATE_ALWAYS != 0)
-                    .open(self.mos_path_to_host_path(&path)) {
-                    Ok(mut f) => {
-                        // wipe the FIL structure
-                        z80_mem_tools::memset(self, fptr, 0, mos::SIZEOF_MOS_FIL_STRUCT);
+                Environment::new(&mut cpu.state, self).subroutine_return();
+                return
+            }
+        }
+        //eprintln!("f_open(${:x}, \"{}\", {})", fptr, &filename, mode);
+        match std::fs::File::options()
+            .read(true)
+            .write(mode & mos::FA_WRITE != 0)
+            .create((mode & mos::FA_CREATE_NEW != 0) || (mode & mos::FA_CREATE_ALWAYS != 0))
+            .truncate(mode & mos::FA_CREATE_ALWAYS != 0)
+            .open(self.mos_path_to_host_path(&path)) {
+            Ok(mut f) => {
+                // wipe the FIL structure
+                z80_mem_tools::memset(self, fptr, 0, mos::SIZEOF_MOS_FIL_STRUCT);
 
-                        // save the size in the FIL structure
-                        let mut file_len = f.seek(SeekFrom::End(0)).unwrap();
-                        f.seek(SeekFrom::Start(0)).unwrap();
+                // save the size in the FIL structure
+                let mut file_len = f.seek(SeekFrom::End(0)).unwrap();
+                f.seek(SeekFrom::Start(0)).unwrap();
 
-                        // XXX don't support files larger than 512KiB
-                        file_len = file_len.min(1<<19);
+                // XXX don't support files larger than 512KiB
+                file_len = file_len.min(1<<19);
 
-                        // store file len in fatfs FIL structure
-                        self._poke24(fptr + mos::FIL_MEMBER_OBJSIZE, file_len as u32);
-                        
-                        // store mapping from MOS *FIL to rust File
-                        self.open_files.insert(fptr, f);
+                // store file len in fatfs FIL structure
+                self._poke24(fptr + mos::FIL_MEMBER_OBJSIZE, file_len as u32);
+                
+                // store mapping from MOS *FIL to rust File
+                self.open_files.insert(fptr, f);
 
-                        cpu.state.reg.set24(Reg16::HL, 0); // ok
-                    }
-                    Err(e) => {
-                        match e.kind() {
-                            std::io::ErrorKind::NotFound => cpu.state.reg.set24(Reg16::HL, 4),
-                            _ => cpu.state.reg.set24(Reg16::HL, 1)
-                        }
-                    }
+                cpu.state.reg.set24(Reg16::HL, 0); // ok
+            }
+            Err(e) => {
+                match e.kind() {
+                    std::io::ErrorKind::NotFound => cpu.state.reg.set24(Reg16::HL, 4),
+                    _ => cpu.state.reg.set24(Reg16::HL, 1)
                 }
             }
-        } else {
-            cpu.state.reg.set24(Reg16::HL, 4);
         }
         Environment::new(&mut cpu.state, self).subroutine_return();
     }
