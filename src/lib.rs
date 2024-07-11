@@ -3,6 +3,7 @@ mod mos;
 mod prt_timer;
 mod symbol_map;
 mod uart;
+mod spi_sdcard;
 pub mod debugger;
 pub mod gpio;
 pub use uart::SerialLink;

@@ -42,6 +42,9 @@ fn handle_vdp(tx_to_ez80: &Sender<u8>, rx_from_ez80: &Receiver<u8>, vdp_terminal
                 9 => {}, // cursor right
                 0xa => println!(),
                 0xd => {},
+                0x11 => {
+                    rx_from_ez80.recv().unwrap();
+                }, // color
                 v if v >= 0x20 && v != 0x7f => {
                     //print!("\x1b[0m{}\x1b[90m", char::from_u32(data as u32).unwrap());
                     print!("{}", char::from_u32(data as u32).unwrap());
@@ -67,6 +70,17 @@ fn handle_vdp(tx_to_ez80: &Sender<u8>, rx_from_ez80: &Receiver<u8>, vdp_terminal
                                        (h & 0xff) as u8, ((h>>8) & 0xff) as u8, 80, 25, 1
                                     ]);
                                 }
+                                // read RTC
+                                0x87 => {
+                                    let mode = rx_from_ez80.recv().unwrap();
+                                    if mode == 0 {
+                                        send_bytes(&tx_to_ez80, &vec![
+                                            0x87, 6, 0, 0, 0, 0, 0, 0
+                                        ]);
+                                    } else {
+                                        println!("unknown packet VDU 0x17, 0, 0x87, 0x{:x}", mode);
+                                    }
+                                }
                                 0xff => {
                                     println!("ez80 request to enter VDP terminal mode.");
                                     *vdp_terminal_mode = true;
@@ -82,6 +96,7 @@ fn handle_vdp(tx_to_ez80: &Sender<u8>, rx_from_ez80: &Receiver<u8>, vdp_terminal
                         }
                     }
                 }
+                0x1e => {} // home cursor
                 _ => {
                     println!("Unknown packet VDU 0x{:x}", data);//char::from_u32(data as u32).unwrap());
                 }
@@ -186,15 +201,22 @@ fn main() {
     let gpios_ = gpios.clone();
 
     let mut unlimited_cpu = false;
-    for arg in std::env::args().skip(1) {
+    let mut sdcard_img = None;
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    while args.len() > 0 {
+        let arg = args.remove(0);
         match arg.as_str() {
             "-u" | "--unlimited-cpu" => {
                 unlimited_cpu = true;
+            }
+            "--sdcard-img" => {
+                sdcard_img = if args.len() > 0 { Some(args.remove(0)) } else { None };
             }
             "--help" | "-h" | _ => {
                 println!("Usage: agon [OPTIONS]");
                 println!();
                 println!("Options:");
+                println!("  --sdcard-img <filename>  Use an SDcard image rather than hostfs");
                 println!("  -u, --unlimited-cpu      Don't limit CPU to Agon Light 18.432MHz");
                 std::process::exit(0);
             }
@@ -211,7 +233,19 @@ fn main() {
             clockspeed_hz: if unlimited_cpu { std::u64::MAX } else { 18_432_000 },
             mos_bin: std::path::PathBuf::from("MOS.bin"),
         });
-        machine.set_sdcard_directory(std::env::current_dir().unwrap().join("sdcard"));
+
+        if let Some(f) = sdcard_img {
+            match std::fs::File::options().read(true).write(true).open(&f) {
+                Ok(file) => machine.set_sdcard_image(Some(file)),
+                Err(e) => {
+                    eprintln!("Could not open sdcard image '{}': {:?}", f, e);
+                    std::process::exit(-1);
+                }
+            }
+        } else {
+            machine.set_sdcard_directory(std::env::current_dir().unwrap().join("sdcard"));
+        }
+
         machine.start(None);
     });
 

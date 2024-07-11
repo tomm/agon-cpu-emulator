@@ -1,7 +1,7 @@
 use ez80::*;
 use std::collections::HashMap;
 use std::io::{ Seek, SeekFrom, Read, Write };
-use crate::{ mos, debugger, prt_timer, gpio, uart };
+use crate::{ mos, debugger, prt_timer, gpio, uart, spi_sdcard };
 use std::sync::{ Arc, Mutex };
 use rand::Rng;
 use chrono::{ Datelike, Timelike };
@@ -21,6 +21,7 @@ pub struct AgonMachine {
     mem_internal: [u8; ONCHIP_RAM_SIZE as usize],  // 8K SRAM on the EZ80F92
     uart0: uart::Uart,
     uart1: uart::Uart,
+    spi_sdcard: spi_sdcard::SpiSdcard,
     // map from MOS fatfs FIL struct ptr to rust File handle
     open_files: HashMap<u32, std::fs::File>,
     open_dirs: HashMap<u32, std::fs::ReadDir>,
@@ -147,6 +148,24 @@ impl Machine for AgonMachine {
 
             0xb5 => {
                 self.onchip_mem_segment
+            }
+
+            0xba => {
+                // SPI control register
+                //println!("Read SPI_CTL");
+                self.spi_sdcard.get_spi_control_register()
+            }
+
+            0xbb => {
+                // SPI status register
+                //println!("Read SPI_SR");
+                self.spi_sdcard.get_spi_status_register()
+            }
+
+            0xbc => {
+                // SPI receive buffer register
+                //println!("Read SPI_RBR");
+                self.spi_sdcard.send_byte().unwrap_or(0xff)
             }
 
             0xc0 => {
@@ -280,6 +299,22 @@ impl Machine for AgonMachine {
                 self.onchip_mem_segment = value;
             }
 
+            0xba => {
+                // SPI control register
+                //println!("Write SPI_CTL with 0x{:x}", value);
+            }
+
+            0xbb => {
+                // SPI status register
+                //println!("Write SPI_SR with 0x{:x}", value);
+            }
+
+            0xbc => {
+                // SPI transmit shift register
+                //println!("Write SPI_TSR with 0x{:x}", value);
+                self.spi_sdcard.recv_byte(value)
+            }
+
             /* UART0_REG_THR - send data to VDP */
             0xc0 => {
                 if self.uart0.is_access_brg_registers() {
@@ -351,6 +386,7 @@ impl AgonMachine {
             mem_internal: [0; ONCHIP_RAM_SIZE as usize],
             uart0: uart::Uart::new(config.uart0_link),
             uart1: uart::Uart::new(config.uart1_link),
+            spi_sdcard: spi_sdcard::SpiSdcard::new(),
             open_files: HashMap::new(),
             open_dirs: HashMap::new(),
             enable_hostfs: true,
@@ -407,6 +443,11 @@ impl AgonMachine {
 
     pub fn set_sdcard_directory(&mut self, path: std::path::PathBuf) {
         self.hostfs_root_dir = path;
+    }
+
+    pub fn set_sdcard_image(&mut self, file: Option<std::fs::File>) {
+        self.enable_hostfs = file.is_none();
+        self.spi_sdcard.set_image_file(file);
     }
 
     fn load_mos(&mut self) {
@@ -1066,7 +1107,7 @@ impl AgonMachine {
                 }
             }
         } else {
-            cpu.state.reg.set24(Reg16::HL, 1);
+            cpu.state.reg.set24(Reg16::HL, 4);
         }
         Environment::new(&mut cpu.state, self).subroutine_return();
     }
