@@ -1,51 +1,53 @@
 Tom's Fake VDP Version 1.03
-Agon Quark MOS Version 1.03
+unknown packet VDU 0x17, 0, 0x94
+
+Agon Console8 MOS Version 2.2.3 Rainbow
 
-*load mos
+/ *load mos
 
-Error accessing SD card
-*ez80asm regression_suite/timerirq.asm
+Could not find file
+/ *ez80asm regression_suite/timerirq.asm
 Assembling regression_suite/timerirq.asm
 Pass 1...
 Pass 2...
 Done
-*load regression_suite/timerirq.bin
-*run
+/ *load regression_suite/timerirq.bin
+/ *run
 Timer CTL read back: 41
 Value set from timer interrupt: C0
 Timer CTL read back: 51
 IRQ counter: 05
 Value set from timer interrupt: D1
-*ez80asm regression_suite/hostfs.asm
+/ *ez80asm regression_suite/hostfs.asm
 Assembling regression_suite/hostfs.asm
 Pass 1...
 Pass 2...
 Done
-*load regression_suite/hostfs.bin
-*run
+/ *load regression_suite/hostfs.bin
+/ *run
 quick
 brown
 sample.txt
 hostfs test passed
-*cd regression_suite
-*ez80asm helloworld.asm
+/ *cd regression_suite
+/regression_suite *ez80asm helloworld.asm
 Assembling helloworld.asm
 Pass 1...
 Pass 2...
 Done
-*ez80asm helloworld16.asm
+/regression_suite *ez80asm helloworld16.asm
 Assembling helloworld16.asm
 Pass 1...
 Pass 2...
 Done
-*cd /
-*load regression_suite/helloworld.bin
-*run
+/regression_suite *cd /
+/ *load regression_suite/helloworld.bin
+/ *run
 Hello world ADL!
-*load regression_suite/helloworld16.bin
-*run
+/ *load regression_suite/helloworld16.bin
+/ *run
 Hello world Z80!
-*disassemble &b0050 100
+/ *disassemble &b0050 100
 0B0050 0B                .      DEC BC
 0B0051 E1                .      POP HL
 0B0052 DD 21 04 34 0B    .!.4.  LD IX,&0B3404
@@ -96,9 +98,9 @@ Hello world Z80!
 0B00AF DD 1F 00          ...    LD (IX+0),DE
 0B00B2 E5                .      PUSH HL
 0B00B3 D1                .      POP DE
-*cd regression_suite
-*load ../bbcbasic.bin
-*run
+/ *cd regression_suite
+/regression_suite *load ../bbcbasic.bin
+/regression_suite *run
 BBC BASIC (Z80) Version 3.00
 (C) Copyright R.T.Russell 1987
 
@@ -252,9 +254,12 @@ BBC BASIC (Z80) Version 3.00
  1460 =A$
 >SAVE "animal2.bas"
 >SAVE "animal2.bbc"
+>SAVE "animal2.bbc"
+
+Access denied
 >*BYE 
-*cd ..
-*RUN
+/regression_suite *cd ..
+/ *RUN
 BBC BASIC (Z80) Version 3.00
 (C) Copyright R.T.Russell 1987
 
@@ -576,4 +581,4 @@ SIN(8)=0.989358247  COS(8)=-0.145500034
 SIN(9)=0.412118485  COS(9)=-0.911130262
 SIN(10)=-0.544021111COS(10)=-0.839071529
 >*BYE
-*
+/ *

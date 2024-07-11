@@ -21,6 +21,7 @@ LOAD "animal.bbc"
 LIST
 SAVE "animal2.bas"
 SAVE "animal2.bbc"
+SAVE "animal2.bbc"
 *BYE 
 cd ..
 RUN
