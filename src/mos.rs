@@ -46,7 +46,7 @@ pub struct MosMap {
     pub _f_setlabel: u32,
     pub f_stat: u32,
     pub _f_sync: u32,
-    pub _f_truncate: u32,
+    pub f_truncate: u32,
     pub f_unlink: u32,
     pub f_write: u32,
 }
@@ -78,7 +78,7 @@ impl MosMap {
         mos_map._f_setlabel = *(map.get("_f_setlabel").ok_or(err)?);
         mos_map.f_stat = *(map.get("_f_stat").ok_or(err)?);
         mos_map._f_sync = *(map.get("_f_sync").ok_or(err)?);
-        mos_map._f_truncate = *(map.get("_f_truncate").ok_or(err)?);
+        mos_map.f_truncate = *(map.get("_f_truncate").ok_or(err)?);
         mos_map.f_unlink = *(map.get("_f_unlink").ok_or(err)?);
         mos_map.f_write = *(map.get("_f_write").ok_or(err)?);
 

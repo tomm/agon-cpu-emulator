@@ -1,3 +1,7 @@
+copy regression_suite/sample.txt temp.txt
+type temp.txt
+ftruncate temp.txt
+type temp.txt
 load mos
 ez80asm regression_suite/timerirq.asm
 load regression_suite/timerirq.bin
@@ -15,7 +19,7 @@ load regression_suite/helloworld16.bin
 run
 disassemble &b0050 100
 cd regression_suite
-load ../bbcbasic.bin
+load ../bbcbasic24.bin
 run
 LOAD "animal.bbc"
 LIST

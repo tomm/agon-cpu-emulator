@@ -1,8 +1,17 @@
 Tom's Fake VDP Version 1.03
 unknown packet VDU 0x17, 0, 0x94
 
-Agon Console8 MOS Version 2.2.3 Rainbow
+Agon Rainbow MOS Version 2.2.3
 
+/ *copy regression_suite/sample.txt temp.txt
+Copying regression_suite/sample.txt to temp.txt
+/ *type temp.txt
+The quick
+brown fox
+jumped over
+the lazy dog.
+/ *ftruncate temp.txt
+/ *type temp.txt
 / *load mos
 
 Could not find file
@@ -99,8 +108,9 @@ Hello world Z80!
 0B00B2 E5                .      PUSH HL
 0B00B3 D1                .      POP DE
 / *cd regression_suite
-/regression_suite *load ../bbcbasic.bin
+/regression_suite *load ../bbcbasic24.bin
 /regression_suite *run
+BBC BASIC (Agon ADL) Version 1.03
 BBC BASIC (Z80) Version 3.00
 (C) Copyright R.T.Russell 1987
 
@@ -260,6 +270,7 @@ Access denied
 >*BYE 
 /regression_suite *cd ..
 / *RUN
+BBC BASIC (Agon ADL) Version 1.03
 BBC BASIC (Z80) Version 3.00
 (C) Copyright R.T.Russell 1987
 

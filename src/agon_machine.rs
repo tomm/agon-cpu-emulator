@@ -994,6 +994,39 @@ impl AgonMachine {
         self.mos_path_to_host_path(&rel_path)
     }
 
+    fn hostfs_mos_f_truncate(&mut self, cpu: &mut Cpu) {
+        let fptr = self._peek24(cpu.state.sp() + 3);
+
+        // truncate from current file position cursor
+        match self.open_files.get(&fptr) {
+            Some(mut f) => {
+                match f.seek(SeekFrom::Current(0)) {
+                    Ok(pos) => {
+                        match f.set_len(pos) {
+                            Ok(_) => {
+                                // store new file len in fatfs FIL structure
+                                self._poke24(fptr + mos::FIL_MEMBER_OBJSIZE, pos as u32);
+
+                                // success
+                                cpu.state.reg.set24(Reg16::HL, 0);
+                            }
+                            Err(_) => {
+                                cpu.state.reg.set24(Reg16::HL, 1); // error
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        cpu.state.reg.set24(Reg16::HL, 1); // error
+                    }
+                }
+            }
+            None => {
+                cpu.state.reg.set24(Reg16::HL, 1); // error
+            }
+        }
+        Environment::new(&mut cpu.state, self).subroutine_return();
+    }
+
     fn hostfs_mos_f_lseek(&mut self, cpu: &mut Cpu) {
         let fptr = self._peek24(cpu.state.sp() + 3);
         let offset = self._peek24(cpu.state.sp() + 6);
@@ -1139,6 +1172,7 @@ impl AgonMachine {
             if pc == self.mos_map.f_rename { self.hostfs_mos_f_rename(cpu); }
             if pc == self.mos_map.f_stat { self.hostfs_mos_f_stat(cpu); }
             if pc == self.mos_map.f_unlink { self.hostfs_mos_f_unlink(cpu); }
+            if pc == self.mos_map.f_truncate { self.hostfs_mos_f_truncate(cpu); }
             // never referenced in MOS
             //if pc == self.mos_map._f_puts { eprintln!("Un-trapped fatfs call: f_puts"); }
             //if pc == self.mos_map._f_setlabel { eprintln!("Un-trapped fatfs call: f_setlabel"); }
