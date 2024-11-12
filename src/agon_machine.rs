@@ -922,7 +922,7 @@ impl AgonMachine {
             Err(e) => {
                 match e.kind() {
                     std::io::ErrorKind::NotFound => {
-                        cpu.state.reg.set24(Reg16::HL, 4);
+                        cpu.state.reg.set24(Reg16::HL, 5);
                     }
                     _ => {
                         cpu.state.reg.set24(Reg16::HL, 1);
@@ -931,7 +931,6 @@ impl AgonMachine {
             }
         }
 
-        cpu.state.reg.set24(Reg16::HL, 0); // ok
         let mut env = Environment::new(&mut cpu.state, self);
         env.subroutine_return();
     }
