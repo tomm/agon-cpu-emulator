@@ -3,6 +3,7 @@ mod mos;
 mod prt_timer;
 mod symbol_map;
 mod uart;
+mod i2c;
 mod spi_sdcard;
 pub mod debugger;
 pub mod gpio;

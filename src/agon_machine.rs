@@ -1,7 +1,7 @@
 use ez80::*;
 use std::collections::HashMap;
 use std::io::{ Seek, SeekFrom, Read, Write };
-use crate::{ mos, debugger, prt_timer, gpio, uart, spi_sdcard };
+use crate::{ mos, debugger, prt_timer, gpio, uart, spi_sdcard, i2c };
 use std::sync::{ Arc, Mutex };
 use rand::Rng;
 use chrono::{ Datelike, Timelike };
@@ -21,6 +21,7 @@ pub struct AgonMachine {
     mem_internal: [u8; ONCHIP_RAM_SIZE as usize],  // 8K SRAM on the EZ80F92
     uart0: uart::Uart,
     uart1: uart::Uart,
+    i2c: i2c::I2c,
     spi_sdcard: spi_sdcard::SpiSdcard,
     // map from MOS fatfs FIL struct ptr to rust File handle
     open_files: HashMap<u32, std::fs::File>,
@@ -197,6 +198,10 @@ impl Machine for AgonMachine {
             0xc6 => self.uart0.read_modem_status_register(),
             0xc7 => self.uart0.spr,
 
+            // i2c
+            0xcb => self.i2c.get_ctl(),
+            0xcc => self.i2c.get_sr(),
+
             /* uart1 is kindof useless in the emulator, but ... */
             0xd0 => {
                 if self.uart1.is_access_brg_registers() {
@@ -337,6 +342,11 @@ impl Machine for AgonMachine {
             0xc3 => self.uart0.lctl = value,
             0xc7 => self.uart0.spr = value,
 
+            // i2c
+            0xcb => self.i2c.set_ctl(value),
+            0xcc => {} // can't set status register
+            0xcd => self.i2c.reset(),
+
             /* uart1 is kindof useless in the emulator, but ... */
             0xd0 => {
                 if self.uart1.is_access_brg_registers() {
@@ -386,6 +396,7 @@ impl AgonMachine {
             mem_internal: [0; ONCHIP_RAM_SIZE as usize],
             uart0: uart::Uart::new(config.uart0_link),
             uart1: uart::Uart::new(config.uart1_link),
+            i2c: i2c::I2c::new(),
             spi_sdcard: spi_sdcard::SpiSdcard::new(),
             open_files: HashMap::new(),
             open_dirs: HashMap::new(),
@@ -1244,6 +1255,14 @@ impl AgonMachine {
                 env.interrupt(0x18); // uart0_handler
                 return;
             }
+
+            if self.i2c.is_interrupt_due() {
+                let mut env = Environment::new(&mut cpu.state, self);
+                //println!("i2c interrupt!");
+                env.interrupt(0x1c);
+                return;
+            }
+
             // fire gpio interrupts
             {
                 let (b_int, c_int, d_int) = {
