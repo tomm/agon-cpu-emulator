@@ -1,5 +1,12 @@
 # Agon CPU Emulator
 
+**Note that this repo is no longer an external dependency of 
+[Fab Agon Emulator](https://github.com/tomm/fab-agon-emulator), and has
+now been moved into that repo (as agon-ez80-emulator). This
+repo is obsolete**.
+
+===============================================
+
 An emulator of the Agon Light CPU (eZ80F92) and CPU-controlled peripherals,
 with host filesystem integration.
 
